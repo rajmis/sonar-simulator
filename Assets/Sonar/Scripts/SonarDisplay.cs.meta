@@ -1,0 +1,14 @@
+fileFormatVersion: 2
+guid: 0d8b40a93b16e4d2898dc29ea38b2adf
+MonoImporter:
+  externalObjects: {}
+  serializedVersion: 2
+  defaultReferences:
+  - emitter: {instanceID: 0}
+  - displayImage: {instanceID: 0}
+  - fanMaterial: {fileID: 2100000, guid: ba6f1bba5ad92970c829f3872dac2c7a, type: 2}
+  executionOrder: 0
+  icon: {instanceID: 0}
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
