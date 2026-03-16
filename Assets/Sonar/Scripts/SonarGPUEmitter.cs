@@ -52,11 +52,11 @@ public class SonarGPUEmitter : MonoBehaviour
     void Start()
     {
         int totalRays = config.TotalRays;
-        raysBuffer = new ComputeBuffer(totalRays, 
-            sizeof(float) * 3 + sizeof(float) * 3 + sizeof(float) 
+        raysBuffer = new ComputeBuffer(totalRays,
+            sizeof(float) * 3 + sizeof(float) * 3 + sizeof(float)
             + sizeof(int) + sizeof(float));
         resultsBuffer = new ComputeBuffer(totalRays,
-            sizeof(float) + sizeof(float) * 3 + sizeof(float) 
+            sizeof(float) + sizeof(float) * 3 + sizeof(float)
             + sizeof(int) + sizeof(float) + sizeof(int));
 
         UpdateCylinderBuffer();
@@ -86,7 +86,7 @@ public class SonarGPUEmitter : MonoBehaviour
         }
 
         cylindersBuffer?.Release();
-        cylindersBuffer = new ComputeBuffer(cylinders.Length, 
+        cylindersBuffer = new ComputeBuffer(cylinders.Length,
             sizeof(float) * 3 + sizeof(float) * 3 + sizeof(float));
         cylindersBuffer.SetData(cylinders);
     }
@@ -113,7 +113,7 @@ public class SonarGPUEmitter : MonoBehaviour
 
         // Apply mount tilt, then fan angle, then vertical offset
         Quaternion tilt = Quaternion.AngleAxis(config.mountTiltDeg, Vector3.right);
-        Quaternion fan  = Quaternion.AngleAxis(beamAngle, Vector3.forward);
+        Quaternion fan = Quaternion.AngleAxis(beamAngle, Vector3.forward);
         Quaternion vert = Quaternion.AngleAxis(vOffset, Vector3.right);
 
         Vector3 localDir = fan * tilt * vert * Vector3.down;
@@ -233,7 +233,7 @@ public class SonarGPUEmitter : MonoBehaviour
     private void AddShadows(float[,] image, int[] firstHitBin)
     {
         int beams = image.GetLength(0);
-        int bins  = image.GetLength(1);
+        int bins = image.GetLength(1);
 
         for (int b = 0; b < beams; b++)
         {
@@ -246,7 +246,7 @@ public class SonarGPUEmitter : MonoBehaviour
     private void AddNoise(float[,] image, int[] firstHitBin)
     {
         int beams = image.GetLength(0);
-        int bins  = image.GetLength(1);
+        int bins = image.GetLength(1);
 
         float pingOffset = Random.Range(0f, 1000f);
 
@@ -305,5 +305,44 @@ public class SonarGPUEmitter : MonoBehaviour
         raysBuffer?.Release();
         resultsBuffer?.Release();
         cylindersBuffer?.Release();
+    }
+
+    [Header("Debug")]
+    public bool showBeams = true;
+    public bool showSubBeams = false;  // warning: draws many rays
+
+    void OnDrawGizmos()
+    {
+        if (!showBeams || config == null) return;
+
+        float halfVFOV = config.verticalFOVDeg / 2f;
+
+        for (int b = 0; b < config.numberOfBeams; b += 4) // every 4th beam to avoid clutter
+        {
+            if (showSubBeams)
+            {
+                // Draw all sub-beams in blue
+                for (int s = 0; s < config.subBeamsPerBeam; s++)
+                {
+                    float vOffset = Mathf.Lerp(-halfVFOV, halfVFOV,
+                        (s + 0.5f) / config.subBeamsPerBeam);
+                    Vector3 dir = GetBeamDirection(b, vOffset);
+                    Gizmos.color = new Color(0, 0.3f, 1f, 0.15f);
+                    Gizmos.DrawRay(transform.position, dir * config.maxRange);
+                }
+            }
+
+            // Draw centre beam in yellow
+            Vector3 centreDir = GetBeamDirection(b, 0f);
+            Gizmos.color = Color.yellow;
+            Gizmos.DrawRay(transform.position, centreDir * config.maxRange);
+        }
+
+        // Draw the fan edges in red
+        Vector3 leftDir = GetBeamDirection(0, 0f);
+        Vector3 rightDir = GetBeamDirection(config.numberOfBeams - 1, 0f);
+        Gizmos.color = Color.red;
+        Gizmos.DrawRay(transform.position, leftDir * config.maxRange);
+        Gizmos.DrawRay(transform.position, rightDir * config.maxRange);
     }
 }
