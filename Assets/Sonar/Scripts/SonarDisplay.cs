@@ -3,7 +3,8 @@ using UnityEngine.UI;
 
 public class SonarDisplay : MonoBehaviour
 {
-    public SonarEmitter emitter;
+    public SonarEmitter cpuEmitter;        // use one or the other
+    public SonarGPUEmitter gpuEmitter;     // use one or the other
     public RawImage displayImage;
     public Material fanMaterial;
 
@@ -14,7 +15,10 @@ public class SonarDisplay : MonoBehaviour
 
     void Start()
     {
-        emitter.OnPingComplete += OnPing;
+        if (cpuEmitter != null)
+            cpuEmitter.OnPingComplete += OnPing;
+        if (gpuEmitter != null)
+            gpuEmitter.OnPingComplete += OnPing;
 
         if (fanMaterial != null)
             displayImage.material = fanMaterial;
@@ -51,7 +55,9 @@ public class SonarDisplay : MonoBehaviour
 
     void OnDestroy()
     {
-        if (emitter != null)
-            emitter.OnPingComplete -= OnPing;
+        if (cpuEmitter != null)
+            cpuEmitter.OnPingComplete -= OnPing;
+        if (gpuEmitter != null)
+            gpuEmitter.OnPingComplete -= OnPing;
     }
 }

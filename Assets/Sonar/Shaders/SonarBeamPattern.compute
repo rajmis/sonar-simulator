@@ -1,0 +1,149 @@
+#pragma kernel CSMain
+
+struct RayInput
+{
+    float3 origin;
+    float3 direction;
+    float maxRange;
+    int beamIndex;
+    float subBeamWeight;  // beam pattern weighting
+};
+
+struct RayResult
+{
+    float hitDistance;
+    float3 hitNormal;
+    float intensity;
+    int beamIndex;
+    float weight;
+    int didHit;
+};
+
+StructuredBuffer<RayInput> _Rays;
+RWStructuredBuffer<RayResult> _Results;
+
+// Scene geometry — cylinders
+struct CylinderDef
+{
+    float3 center;      // xz position + yMin
+    float radius;
+    float yMin;
+    float yMax;
+    float reflectivity;
+};
+
+StructuredBuffer<CylinderDef> _Cylinders;
+int _NumCylinders;
+
+// Plane (seabed)
+float _SeabedY;
+float _SeabedReflectivity;
+
+float2 RayCylinder(float3 origin, float3 dir, CylinderDef cyl)
+{
+    // Returns (t, normalAngle) or (-1, 0) if miss
+    float2 oc = origin.xz - cyl.center.xz;
+    float2 d = dir.xz;
+
+    float a = dot(d, d);
+    float b = 2.0 * dot(oc, d);
+    float c = dot(oc, oc) - cyl.radius * cyl.radius;
+
+    float disc = b * b - 4.0 * a * c;
+    if (disc < 0) return float2(-1, 0);
+
+    float sqrtDisc = sqrt(disc);
+    float t1 = (-b - sqrtDisc) / (2.0 * a);
+    float t2 = (-b + sqrtDisc) / (2.0 * a);
+
+    // Check both intersections
+    for (int i = 0; i < 2; i++)
+    {
+        float t = (i == 0) ? t1 : t2;
+        if (t > 0.001)
+        {
+            float hitY = origin.y + t * dir.y;
+            if (hitY >= cyl.yMin && hitY <= cyl.yMax)
+            {
+                return float2(t, cyl.reflectivity);
+            }
+        }
+    }
+    return float2(-1, 0);
+}
+
+float2 RayPlane(float3 origin, float3 dir, float planeY)
+{
+    // Returns (t, 0) or (-1, 0)
+    if (abs(dir.y) < 0.0001) return float2(-1, 0);
+    float t = (planeY - origin.y) / dir.y;
+    if (t > 0.001) return float2(t, 1);
+    return float2(-1, 0);
+}
+
+[numthreads(256, 1, 1)]
+void CSMain(uint3 id : SV_DispatchThreadID)
+{
+    RayInput ray = _Rays[id.x];
+    RayResult result;
+    result.hitDistance = ray.maxRange;
+    result.hitNormal = float3(0, 1, 0);
+    result.intensity = 0;
+    result.beamIndex = ray.beamIndex;
+    result.weight = ray.subBeamWeight;
+    result.didHit = 0;
+
+    float closestT = ray.maxRange;
+    float hitReflectivity = 0;
+    float3 hitNormal = float3(0, 1, 0);
+
+    // Test all cylinders
+    for (int c = 0; c < _NumCylinders; c++)
+    {
+        float2 cylHit = RayCylinder(ray.origin, ray.direction, _Cylinders[c]);
+        if (cylHit.x > 0 && cylHit.x < closestT)
+        {
+            closestT = cylHit.x;
+            hitReflectivity = cylHit.y;
+
+            // Compute cylinder normal at hit point
+            float3 hitPos = ray.origin + cylHit.x * ray.direction;
+            hitNormal = normalize(float3(
+                hitPos.x - _Cylinders[c].center.x, 0,
+                hitPos.z - _Cylinders[c].center.z));
+            result.didHit = 1;
+        }
+    }
+
+    // Test seabed plane
+    float2 planeHit = RayPlane(ray.origin, ray.direction, _SeabedY);
+    if (planeHit.x > 0 && planeHit.x < closestT)
+    {
+        closestT = planeHit.x;
+        hitReflectivity = _SeabedReflectivity;
+        hitNormal = float3(0, 1, 0);
+        result.didHit = 1;
+    }
+
+    if (result.didHit == 1)
+    {
+        result.hitDistance = closestT;
+        result.hitNormal = hitNormal;
+
+        // Sonar equation on GPU
+        float range = closestT;
+        float absorptionCoeff = 0.01;
+        float TL = 40.0 * log10(max(range, 0.1)) + 2.0 * absorptionCoeff * range;
+
+        float grazingAngle = acos(abs(dot(ray.direction, hitNormal)));
+        float BS = 10.0 * log10(hitReflectivity * sin(grazingAngle) + 0.001);
+
+        float SL = 200.0;
+        float EL = SL - TL + BS;
+
+        // Normalise
+        result.intensity = saturate((EL - 100.0) / 70.0);
+    }
+
+    _Results[id.x] = result;
+}

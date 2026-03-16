@@ -5,11 +5,15 @@ public class SonarConfig : ScriptableObject
 {
     [Header("Beam Configuration")]
     public int numberOfBeams = 256;
-    public float swathAngleDeg = 150f;
+    public float swathAngleDeg = 150f;       // hFOV
+
+    [Header("Beam Pattern")]
+    public float verticalFOVDeg = 25f;        // vFOV
+    public int subBeamsPerBeam = 9;           // rays per beam across vFOV
 
     [Header("Range Configuration")]
     public float maxRange = 100f;
-    public int numberOfRangeBins = 650;  // fixed by hardware
+    public int numberOfRangeBins = 650;
 
     [Header("Timing")]
     public float pingRateHz = 15f;
@@ -23,5 +27,6 @@ public class SonarConfig : ScriptableObject
 
     // Derived
     public float AngularResolutionDeg => swathAngleDeg / numberOfBeams;
-    public float RangeBinSize => maxRange / numberOfRangeBins;  // ~0.1538 m per bin
+    public float RangeBinSize => maxRange / numberOfRangeBins;
+    public int TotalRays => numberOfBeams * subBeamsPerBeam;
 }
