@@ -324,7 +324,7 @@ public class SonarGPUEmitter : MonoBehaviour
         float halfVFOV = config.verticalFOVDeg / 2f;
         float halfBeamWidth = config.AngularResolutionDeg / 2f;
 
-        for (int b = 0; b < config.numberOfBeams; b += 32)
+        for (int b = 0; b < config.numberOfBeams; b++) // every beam
         {
             if (showSubBeams)
             {

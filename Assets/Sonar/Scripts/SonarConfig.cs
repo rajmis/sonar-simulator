@@ -9,8 +9,8 @@ public class SonarConfig : ScriptableObject
 
     [Header("Beam Pattern")]
     public float verticalFOVDeg = 25f;
-    public int subBeamsH = 3;     // horizontal samples within beam width
-    public int subBeamsV = 3;     // vertical samples within vFOV
+    public int subBeamsH = 5;     // horizontal samples within beam width
+    public int subBeamsV = 9;     // vertical samples within vFOV
                                   // Total sub-beams per beam = subBeamsH * subBeamsV
 
     [Header("Range Configuration")]
