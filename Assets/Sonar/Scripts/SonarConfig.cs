@@ -8,8 +8,10 @@ public class SonarConfig : ScriptableObject
     public float swathAngleDeg = 150f;       // hFOV
 
     [Header("Beam Pattern")]
-    public float verticalFOVDeg = 25f;        // vFOV
-    public int subBeamsPerBeam = 9;           // rays per beam across vFOV
+    public float verticalFOVDeg = 25f;
+    public int subBeamsH = 3;     // horizontal samples within beam width
+    public int subBeamsV = 3;     // vertical samples within vFOV
+                                  // Total sub-beams per beam = subBeamsH * subBeamsV
 
     [Header("Range Configuration")]
     public float maxRange = 100f;
@@ -28,5 +30,6 @@ public class SonarConfig : ScriptableObject
     // Derived
     public float AngularResolutionDeg => swathAngleDeg / numberOfBeams;
     public float RangeBinSize => maxRange / numberOfRangeBins;
-    public int TotalRays => numberOfBeams * subBeamsPerBeam;
+    public int SubBeamsPerBeam => subBeamsH * subBeamsV;
+    public int TotalRays => numberOfBeams * SubBeamsPerBeam;
 }

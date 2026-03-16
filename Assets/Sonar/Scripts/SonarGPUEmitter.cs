@@ -103,30 +103,33 @@ public class SonarGPUEmitter : MonoBehaviour
         }
     }
 
-    private Vector3 GetBeamDirection(int beamIndex, float vOffset)
+    private Vector3 GetBeamDirection(int beamIndex, float hOffset, float vOffset)
     {
         float halfSwath = config.swathAngleDeg / 2f;
         float angleStep = config.AngularResolutionDeg;
 
-        // Horizontal angle (across-track)
-        float beamAngle = -halfSwath + (beamIndex * angleStep) + (angleStep / 2f);
+        // Base horizontal angle + small offset within beam width
+        float beamAngle = -halfSwath + (beamIndex * angleStep) + (angleStep / 2f) + hOffset;
 
-        // Apply mount tilt, then fan angle, then vertical offset
+        // Build rotation: mount tilt, then fan angle, then vertical offset
         Quaternion tilt = Quaternion.AngleAxis(config.mountTiltDeg, Vector3.right);
         Quaternion fan = Quaternion.AngleAxis(beamAngle, Vector3.forward);
         Quaternion vert = Quaternion.AngleAxis(vOffset, Vector3.right);
 
-        Vector3 localDir = fan * tilt * vert * Vector3.down;
-
+        Vector3 localDir = fan * vert * tilt * Vector3.down;
         return transform.TransformDirection(localDir);
     }
 
-    private float BeamPatternWeight(float vOffset)
+    private float BeamPatternWeight(float hOffset, float vOffset)
     {
-        // Gaussian beam pattern — centre of vFOV is strongest
+        float halfBeamWidth = config.AngularResolutionDeg / 2f;
         float halfVFOV = config.verticalFOVDeg / 2f;
-        float normalised = vOffset / halfVFOV; // -1 to 1
-        return Mathf.Exp(-2f * normalised * normalised);
+
+        float normH = hOffset / halfBeamWidth;    // -1 to 1
+        float normV = vOffset / halfVFOV;          // -1 to 1
+
+        // 2D Gaussian — strongest at centre of beam cone
+        return Mathf.Exp(-2f * (normH * normH + normV * normV));
     }
 
     private void ExecutePingGPU()
@@ -134,33 +137,39 @@ public class SonarGPUEmitter : MonoBehaviour
         int totalRays = config.TotalRays;
         int numBins = config.numberOfRangeBins;
 
-        // Build ray inputs with sub-beam cluster
         RayInput[] rays = new RayInput[totalRays];
         float halfVFOV = config.verticalFOVDeg / 2f;
+        float halfBeamWidth = config.AngularResolutionDeg / 2f;
 
         for (int b = 0; b < config.numberOfBeams; b++)
         {
-            for (int s = 0; s < config.subBeamsPerBeam; s++)
+            for (int sv = 0; sv < config.subBeamsV; sv++)
             {
-                // Spread sub-beams across the vFOV
-                float vOffset = Mathf.Lerp(-halfVFOV, halfVFOV,
-                    (s + 0.5f) / config.subBeamsPerBeam);
-
-                int idx = b * config.subBeamsPerBeam + s;
-                rays[idx] = new RayInput
+                for (int sh = 0; sh < config.subBeamsH; sh++)
                 {
-                    origin = transform.position,
-                    direction = GetBeamDirection(b, vOffset),
-                    maxRange = config.maxRange,
-                    beamIndex = b,
-                    subBeamWeight = BeamPatternWeight(vOffset)
-                };
+                    // Vertical offset across vFOV
+                    float vOffset = Mathf.Lerp(-halfVFOV, halfVFOV,
+                        (sv + 0.5f) / config.subBeamsV);
+
+                    // Horizontal offset within beam width
+                    float hOffset = Mathf.Lerp(-halfBeamWidth, halfBeamWidth,
+                        (sh + 0.5f) / config.subBeamsH);
+
+                    int idx = b * config.SubBeamsPerBeam + sv * config.subBeamsH + sh;
+                    rays[idx] = new RayInput
+                    {
+                        origin = transform.position,
+                        direction = GetBeamDirection(b, hOffset, vOffset),
+                        maxRange = config.maxRange,
+                        beamIndex = b,
+                        subBeamWeight = BeamPatternWeight(hOffset, vOffset)
+                    };
+                }
             }
         }
 
         raysBuffer.SetData(rays);
 
-        // Set compute shader parameters
         int kernel = sonarComputeShader.FindKernel("CSMain");
         sonarComputeShader.SetBuffer(kernel, "_Rays", raysBuffer);
         sonarComputeShader.SetBuffer(kernel, "_Results", resultsBuffer);
@@ -172,15 +181,12 @@ public class SonarGPUEmitter : MonoBehaviour
         sonarComputeShader.SetFloat("_SeabedReflectivity",
             seabedAcoustics != null ? seabedAcoustics.reflectivity : 0.3f);
 
-        // Dispatch
         int threadGroups = Mathf.CeilToInt(totalRays / 256f);
         sonarComputeShader.Dispatch(kernel, threadGroups, 1, 1);
 
-        // Read back
         RayResult[] results = new RayResult[totalRays];
         resultsBuffer.GetData(results);
 
-        // Accumulate sub-beam results into intensity image
         BuildIntensityImage(results, numBins);
     }
 
@@ -316,31 +322,35 @@ public class SonarGPUEmitter : MonoBehaviour
         if (!showBeams || config == null) return;
 
         float halfVFOV = config.verticalFOVDeg / 2f;
+        float halfBeamWidth = config.AngularResolutionDeg / 2f;
 
-        for (int b = 0; b < config.numberOfBeams; b += 4) // every 4th beam to avoid clutter
+        for (int b = 0; b < config.numberOfBeams; b += 32)
         {
             if (showSubBeams)
             {
-                // Draw all sub-beams in blue
-                for (int s = 0; s < config.subBeamsPerBeam; s++)
+                for (int sv = 0; sv < config.subBeamsV; sv++)
                 {
-                    float vOffset = Mathf.Lerp(-halfVFOV, halfVFOV,
-                        (s + 0.5f) / config.subBeamsPerBeam);
-                    Vector3 dir = GetBeamDirection(b, vOffset);
-                    Gizmos.color = new Color(0, 0.3f, 1f, 0.15f);
-                    Gizmos.DrawRay(transform.position, dir * config.maxRange);
+                    for (int sh = 0; sh < config.subBeamsH; sh++)
+                    {
+                        float vOffset = Mathf.Lerp(-halfVFOV, halfVFOV,
+                            (sv + 0.5f) / config.subBeamsV);
+                        float hOffset = Mathf.Lerp(-halfBeamWidth, halfBeamWidth,
+                            (sh + 0.5f) / config.subBeamsH);
+
+                        Vector3 dir = GetBeamDirection(b, hOffset, vOffset);
+                        Gizmos.color = new Color(0, 0.3f, 1f, 0.15f);
+                        Gizmos.DrawRay(transform.position, dir * config.maxRange);
+                    }
                 }
             }
 
-            // Draw centre beam in yellow
-            Vector3 centreDir = GetBeamDirection(b, 0f);
+            Vector3 centreDir = GetBeamDirection(b, 0f, 0f);
             Gizmos.color = Color.yellow;
             Gizmos.DrawRay(transform.position, centreDir * config.maxRange);
         }
 
-        // Draw the fan edges in red
-        Vector3 leftDir = GetBeamDirection(0, 0f);
-        Vector3 rightDir = GetBeamDirection(config.numberOfBeams - 1, 0f);
+        Vector3 leftDir = GetBeamDirection(0, 0f, 0f);
+        Vector3 rightDir = GetBeamDirection(config.numberOfBeams - 1, 0f, 0f);
         Gizmos.color = Color.red;
         Gizmos.DrawRay(transform.position, leftDir * config.maxRange);
         Gizmos.DrawRay(transform.position, rightDir * config.maxRange);
