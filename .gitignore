@@ -15,6 +15,7 @@ unity/Assets/Plugins/Editor/JetBrains*
 # Unity auto-generated
 *.csproj
 *.sln
+*.slnx
 *.suo
 *.user
 *.pidb
@@ -24,6 +25,7 @@ unity/Assets/Plugins/Editor/JetBrains*
 *.mdb
 *.opendb
 *.VC.db
+*.tmp
 
 # Crash reports
 unity/sysinfo.txt
