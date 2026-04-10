@@ -1,0 +1,66 @@
+# Material acoustic properties for sonar simulator.
+# Keys are materialType enum indices (matching Unity AcousticProperties.materialType).
+# All values in linear scale unless noted.
+
+materials:
+  0:  # Default / Unknown
+    name: "default"
+    reflectivity: 0.3
+    scattering_coefficient: 0.1
+    absorption_db_per_m: 0.001
+
+  1:  # Steel
+    name: "steel"
+    reflectivity: 0.95
+    scattering_coefficient: 0.05
+    absorption_db_per_m: 0.0
+
+  2:  # Concrete
+    name: "concrete"
+    reflectivity: 0.7
+    scattering_coefficient: 0.25
+    absorption_db_per_m: 0.0
+
+  3:  # Sand (seabed)
+    name: "sand"
+    reflectivity: 0.2
+    scattering_coefficient: 0.35
+    absorption_db_per_m: 0.002
+
+  4:  # Mud (seabed)
+    name: "mud"
+    reflectivity: 0.1
+    scattering_coefficient: 0.15
+    absorption_db_per_m: 0.003
+
+  5:  # Rock
+    name: "rock"
+    reflectivity: 0.6
+    scattering_coefficient: 0.3
+    absorption_db_per_m: 0.0
+
+  6:  # Wood
+    name: "wood"
+    reflectivity: 0.4
+    scattering_coefficient: 0.2
+    absorption_db_per_m: 0.005
+
+  7:  # Rubber / coating
+    name: "rubber"
+    reflectivity: 0.05
+    scattering_coefficient: 0.02
+    absorption_db_per_m: 0.01
+
+# Noise parameters
+noise:
+  receiver_noise_floor_db: -80.0
+  volume_scattering_db_per_m: -70.0
+  speckle_std: 0.15        # Multiplicative Rayleigh speckle
+  band_noise_num_bands: 3
+  band_noise_amplitude: 0.02
+
+# Sonar defaults (can be overridden by ping header)
+sonar:
+  source_level_db: 220.0
+  pulse_length_s: 0.0001
+  frequency_hz: 400000.0

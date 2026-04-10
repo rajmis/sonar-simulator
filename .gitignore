@@ -1,28 +1,22 @@
-# Unity-generated folders
-[Ll]ibrary/
-[Tt]emp/
-[Oo]bj/
-[Bb]uild/
-[Bb]uilds/
-[Ll]ogs/
-[Uu]ser[Ss]ettings/
+# ========================
+# Unity
+# ========================
+unity/Library/
+unity/Temp/
+unity/Obj/
+unity/Build/
+unity/Builds/
+unity/Logs/
+unity/UserSettings/
+unity/MemoryCaptures/
+unity/Recordings/
+unity/Assets/Plugins/Editor/JetBrains*
 
-# Memory captures and recordings
-[Mm]emoryCaptures/
-[Rr]ecordings/
-
-# Visual Studio / Rider / VS Code
-.vs/
-.idea/
-.vscode/
+# Unity auto-generated
 *.csproj
-*.unityproj
 *.sln
-*.slnx
 *.suo
-*.tmp
 *.user
-*.userprefs
 *.pidb
 *.booproj
 *.svd
@@ -31,22 +25,42 @@
 *.opendb
 *.VC.db
 
-# Unity3D generated files
-*.pidb.meta
-*.pdb.meta
-*.mdb.meta
-sysinfo.txt
+# Crash reports
+unity/sysinfo.txt
+unity/crashlytics-build.properties
 
-# Build outputs and caches
-*.apk
-*.aab
-*.unitypackage
-*.app
-*.ipa
+# ========================
+# Python
+# ========================
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+dist/
+build/
+*.egg
 
-# OS files
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Test fixtures (generated, not source)
+processor/tests/fixtures/*.bin
+
+# ========================
+# IDE / Editor
+# ========================
+.vs/
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# ========================
+# OS
+# ========================
 .DS_Store
 Thumbs.db
-
-# Optional: uncomment if you do not want generated package lock file tracked
-# Packages/packages-lock.json
+Desktop.ini

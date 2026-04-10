@@ -27,6 +27,12 @@ public class SonarConfig : ScriptableObject
     public float mountTiltDeg = 0f;
     public float mountRollDeg = 0f;
 
+    [Header("Acoustics (used by Python processor)")]
+    public float speedOfSound = 1500f;
+    public float sourceLevel_dB = 220f;
+    public float pulseLength_s = 0.0001f;
+    public float frequency_Hz = 400000f;
+
     // Derived
     public float AngularResolutionDeg => swathAngleDeg / numberOfBeams;
     public float RangeBinSize => maxRange / numberOfRangeBins;

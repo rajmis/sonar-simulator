@@ -1,0 +1,10 @@
+name: sonar-sim
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.11
+  - numpy
+  - pyyaml
+  - opencv  # cv2 — for future visualisation tools
+  - pip
