@@ -1190,6 +1190,9 @@ GameObject:
   m_Component:
   - component: {fileID: 2147063334}
   - component: {fileID: 2147063333}
+  - component: {fileID: 2147063337}
+  - component: {fileID: 2147063338}
+  - component: {fileID: 2147063339}
   m_Layer: 0
   m_Name: SonarHeadGPU
   m_TagString: Untagged
@@ -1204,7 +1207,7 @@ MonoBehaviour:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 2147063332}
-  m_Enabled: 1
+  m_Enabled: 0
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 99a1cac9cbb823a72b674e243b6ed58f, type: 3}
   m_Name: 
@@ -1231,6 +1234,52 @@ Transform:
   m_Children: []
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: -45, y: 0, z: 0}
+--- !u!114 &2147063337
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2147063332}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 35f194359dcce36fcb7306ec728e96fa, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::Sonar.Raycasting.SonarRaycaster
+  config: {fileID: 11400000, guid: 72dc2d1e6194a0401a1e6d0c1859ff6a, type: 2}
+  targetLayer:
+    serializedVersion: 2
+    m_Bits: 8
+--- !u!114 &2147063338
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2147063332}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 5228e19fe4a042e79aeddd2de71caf82, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::Sonar.Network.SonarNetworkClient
+  config: {fileID: 11400000, guid: 72dc2d1e6194a0401a1e6d0c1859ff6a, type: 2}
+  host: 127.0.0.1
+  port: 9000
+  connected: 0
+  pingsProcessed: 0
+--- !u!114 &2147063339
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2147063332}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 6953bba47f23af4178f8cd90883dedd6, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::Sonar.Core.SonarBridge
+  display: {fileID: 963590823}
 --- !u!1660057539 &9223372036854775807
 SceneRoots:
   m_ObjectHideFlags: 0
