@@ -1,0 +1,82 @@
+point_id,type,unity_x,unity_z,lat,lng,notes
+deploy_origin,origin,0.0,0.0,1.2149958,103.8515187,deploy_origin
+pillar_1,pillar,-5.657,21.739,1.2151924,103.8514674,pillar_1
+pillar_2,pillar,-11.0,44.797,1.2154009,103.8514190,pillar_2
+pillar_3,pillar,-15.366,64.757,1.2155814,103.8513794,pillar_3
+pillar_4,pillar,-19.805,83.759,1.2157533,103.8513392,pillar_4
+pillar_5,pillar,-22.785,98.598,1.2158875,103.8513121,pillar_5
+pillar_6,pillar,-9.422,-5.116,1.2149495,103.8514333,pillar_6
+pillar_7,pillar,-22.061,-8.053,1.2149229,103.8513187,pillar_7
+pillar_8,pillar,3.112,-19.499,1.2148194,103.8515469,pillar_8
+pillar_9,pillar,6.77,-37.047,1.2146607,103.8515801,pillar_9
+pillar_10,pillar,8.723,-0.844,1.2149881,103.8515978,pillar_10
+pillar_11,pillar,22.436,1.99,1.2150138,103.8517221,pillar_11
+breakwater_01,breakwater,-3.767,120.371,1.2160844,103.8514846,breakwater_01
+breakwater_02,breakwater,-26.936,152.973,1.2163792,103.8512745,breakwater_02
+breakwater_03,breakwater,-46.373,132.317,1.2161924,103.8510983,breakwater_03
+breakwater_04,breakwater,-59.782,79.355,1.2157134,103.8509767,breakwater_04
+breakwater_05,breakwater,-48.558,-0.613,1.2149902,103.8510785,breakwater_05
+breakwater_06,breakwater,15.779,-68.054,1.2143803,103.8516618,breakwater_06
+breakwater_07,breakwater,40.86,-38.478,1.2146478,103.8518892,breakwater_07
+breakwater_08,breakwater,32.634,4.631,1.2150377,103.8518146,breakwater_08
+gate_north,barrier,18.414,135.433,1.2162206,103.8516857,gate_north
+gate_south,barrier,52.047,8.627,1.2150738,103.8519906,gate_south
+jetty_base_start,jetty,-27.784,-7.264,1.2149301,103.8512668,jetty_base_start
+jetty_base_end,jetty,12.934,2.027,1.2150141,103.8516360,jetty_base_end
+jetty_ramp_start,ramp,-38.886,-8.161,1.2149220,103.8511662,jetty_ramp_start
+jetty_ramp_end,ramp,-24.231,-6.32,1.2149386,103.8512990,jetty_ramp_end
+jetty_base_right_end,jetty,5.196,-19.559,1.2148189,103.8515658,jetty_base_right_end
+jetty_base_right_start,jetty,1.546,-1.801,1.2149795,103.8515327,jetty_base_right_start
+bw_path_000,breakwater,17.994,134.977,1.2162165,103.8516819,breakwater path vertex 0
+bw_path_001,breakwater,10.535,143.782,1.2162961,103.8516142,breakwater path vertex 1
+bw_path_002,breakwater,7.549,155.251,1.2163998,103.8515872,breakwater path vertex 2
+bw_path_003,breakwater,4.176,159.42,1.2164375,103.8515566,breakwater path vertex 3
+bw_path_004,breakwater,-6.256,156.27,1.2164090,103.8514620,breakwater path vertex 4
+bw_path_005,breakwater,-5.585,143.908,1.2162972,103.8514681,breakwater path vertex 5
+bw_path_006,breakwater,-5.258,135.337,1.2162197,103.8514710,breakwater path vertex 6
+bw_path_007,breakwater,-5.776,128.298,1.2161561,103.8514664,breakwater path vertex 7
+bw_path_008,breakwater,-3.687,120.474,1.2160853,103.8514853,breakwater path vertex 8
+bw_path_009,breakwater,-7.555,125.774,1.2161332,103.8514502,breakwater path vertex 9
+bw_path_010,breakwater,-8.01,136.153,1.2162271,103.8514461,breakwater path vertex 10
+bw_path_011,breakwater,-10.264,146.414,1.2163199,103.8514257,breakwater path vertex 11
+bw_path_012,breakwater,-16.673,154.886,1.2163965,103.8513675,breakwater path vertex 12
+bw_path_013,breakwater,-25.605,154.146,1.2163898,103.8512866,breakwater path vertex 13
+bw_path_014,breakwater,-36.791,145.815,1.2163145,103.8511851,breakwater path vertex 14
+bw_path_015,breakwater,-46.264,132.034,1.2161898,103.8510993,breakwater path vertex 15
+bw_path_016,breakwater,-54.286,115.389,1.2160393,103.8510265,breakwater path vertex 16
+bw_path_017,breakwater,-59.185,94.944,1.2158544,103.8509821,breakwater path vertex 17
+bw_path_018,breakwater,-59.29,73.886,1.2156640,103.8509812,breakwater path vertex 18
+bw_path_019,breakwater,-59.701,60.458,1.2155425,103.8509774,breakwater path vertex 19
+bw_path_020,breakwater,-58.347,47.304,1.2154236,103.8509897,breakwater path vertex 20
+bw_path_021,breakwater,-53.803,18.039,1.2151589,103.8510309,breakwater path vertex 21
+bw_path_022,breakwater,-48.438,-0.797,1.2149886,103.8510795,breakwater path vertex 22
+bw_path_023,breakwater,-39.95,-17.261,1.2148397,103.8511565,breakwater path vertex 23
+bw_path_024,breakwater,-31.3,-30.664,1.2147185,103.8512349,breakwater path vertex 24
+bw_path_025,breakwater,-24.359,-39.184,1.2146414,103.8512979,breakwater path vertex 25
+bw_path_026,breakwater,-16.269,-49.33,1.2145496,103.8513712,breakwater path vertex 26
+bw_path_027,breakwater,-6.21,-57.883,1.2144723,103.8514624,breakwater path vertex 27
+bw_path_028,breakwater,12.088,-67.626,1.2143842,103.8516283,breakwater path vertex 28
+bw_path_029,breakwater,20.411,-68.815,1.2143734,103.8517038,breakwater path vertex 29
+bw_path_030,breakwater,25.106,-67.717,1.2143834,103.8517463,breakwater path vertex 30
+bw_path_031,breakwater,28.772,-65.275,1.2144054,103.8517796,breakwater path vertex 31
+bw_path_032,breakwater,33.579,-62.958,1.2144264,103.8518232,breakwater path vertex 32
+bw_path_033,breakwater,36.404,-57.185,1.2144786,103.8518488,breakwater path vertex 33
+bw_path_034,breakwater,40.567,-46.039,1.2145794,103.8518865,breakwater path vertex 34
+bw_path_035,breakwater,41.203,-34.364,1.2146850,103.8518923,breakwater path vertex 35
+bw_path_036,breakwater,38.914,-22.111,1.2147958,103.8518715,breakwater path vertex 36
+bw_path_037,breakwater,33.709,-10.253,1.2149030,103.8518243,breakwater path vertex 37
+bw_path_038,breakwater,32.379,-1.734,1.2149801,103.8518123,breakwater path vertex 38
+bw_path_039,breakwater,31.261,1.674,1.2150109,103.8518021,breakwater path vertex 39
+bw_path_040,breakwater,32.484,4.521,1.2150367,103.8518132,breakwater path vertex 40
+bw_path_041,breakwater,34.477,-1.259,1.2149844,103.8518313,breakwater path vertex 41
+bw_path_042,breakwater,35.065,-5.799,1.2149433,103.8518366,breakwater path vertex 42
+bw_path_043,breakwater,37.008,-12.432,1.2148833,103.8518542,breakwater path vertex 43
+bw_path_044,breakwater,38.881,-16.525,1.2148463,103.8518712,breakwater path vertex 44
+bw_path_045,breakwater,41.265,-17.775,1.2148350,103.8518928,breakwater path vertex 45
+bw_path_046,breakwater,47.675,-14.734,1.2148625,103.8519510,breakwater path vertex 46
+bw_path_047,breakwater,50.699,-12.71,1.2148808,103.8519784,breakwater path vertex 47
+bw_path_048,breakwater,50.702,-10.254,1.2149030,103.8519784,breakwater path vertex 48
+bw_path_049,breakwater,49.096,-3.173,1.2149671,103.8519638,breakwater path vertex 49
+bw_path_050,breakwater,46.643,1.875,1.2150127,103.8519416,breakwater path vertex 50
+bw_path_051,breakwater,47.677,7.415,1.2150628,103.8519510,breakwater path vertex 51
+bw_path_052,breakwater,53.313,9.087,1.2150779,103.8520021,breakwater path vertex 52

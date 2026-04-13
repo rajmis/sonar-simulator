@@ -1,0 +1,388 @@
+LAGOON SCENE SUMMARY
+==================================================
+
+Origin: deploy_origin
+  Lat/Lng: (1.2149958, 103.8515187)
+  Unity:   (0.000, 0.000)
+
+Structure counts:
+  barrier: 2
+  breakwater: 61
+  jetty: 4
+  origin: 1
+  pillar: 11
+  ramp: 2
+
+Paths:
+  'breakwater_path': 53 vertices (breakwater)
+
+ID                             Type         X (E)      Z (N)      Range     
+------------------------------------------------------------------------
+deploy_origin                  origin       0.00       0.00       0.0       
+pillar_1                       pillar       -5.66      21.74      22.5      
+pillar_2                       pillar       -11.00     44.80      46.1      
+pillar_3                       pillar       -15.37     64.76      66.6      
+pillar_4                       pillar       -19.80     83.76      86.1      
+pillar_5                       pillar       -22.79     98.60      101.2     
+pillar_6                       pillar       -9.42      -5.12      10.7      
+pillar_7                       pillar       -22.06     -8.05      23.5      
+pillar_8                       pillar       3.11       -19.50     19.7      
+pillar_9                       pillar       6.77       -37.05     37.7      
+pillar_10                      pillar       8.72       -0.84      8.8       
+pillar_11                      pillar       22.44      1.99       22.5      
+breakwater_01                  breakwater   -3.77      120.37     120.4     
+breakwater_02                  breakwater   -26.94     152.97     155.3     
+breakwater_03                  breakwater   -46.37     132.32     140.2     
+breakwater_04                  breakwater   -59.78     79.36      99.4      
+breakwater_05                  breakwater   -48.56     -0.61      48.6      
+breakwater_06                  breakwater   15.78      -68.05     69.9      
+breakwater_07                  breakwater   40.86      -38.48     56.1      
+breakwater_08                  breakwater   32.63      4.63       33.0      
+gate_north                     barrier      18.41      135.43     136.7     
+gate_south                     barrier      52.05      8.63       52.8      
+jetty_base_start               jetty        -27.78     -7.26      28.7      
+jetty_base_end                 jetty        12.93      2.03       13.1      
+jetty_ramp_start               ramp         -38.89     -8.16      39.7      
+jetty_ramp_end                 ramp         -24.23     -6.32      25.0      
+jetty_base_right_end           jetty        5.20       -19.56     20.2      
+jetty_base_right_start         jetty        1.55       -1.80      2.4       
+
+Key distances (for sanity check):
+  deploy_origin ↔ pillar_1: 22.5 m
+  deploy_origin ↔ pillar_2: 46.1 m
+  deploy_origin ↔ pillar_3: 66.6 m
+  deploy_origin ↔ pillar_4: 86.1 m
+  deploy_origin ↔ pillar_5: 101.2 m
+  deploy_origin ↔ pillar_6: 10.7 m
+  deploy_origin ↔ pillar_7: 23.5 m
+  deploy_origin ↔ pillar_8: 19.7 m
+  deploy_origin ↔ pillar_9: 37.7 m
+  deploy_origin ↔ pillar_10: 8.8 m
+  deploy_origin ↔ pillar_11: 22.5 m
+  deploy_origin ↔ breakwater_01: 120.4 m
+  deploy_origin ↔ breakwater_03: 140.2 m
+  deploy_origin ↔ breakwater_04: 99.4 m
+  deploy_origin ↔ breakwater_05: 48.6 m
+  deploy_origin ↔ breakwater_06: 69.9 m
+  deploy_origin ↔ breakwater_07: 56.1 m
+  deploy_origin ↔ breakwater_08: 33.0 m
+  deploy_origin ↔ gate_north: 136.7 m
+  deploy_origin ↔ gate_south: 52.8 m
+  deploy_origin ↔ jetty_base_start: 28.7 m
+  deploy_origin ↔ jetty_base_end: 13.1 m
+  deploy_origin ↔ jetty_ramp_start: 39.7 m
+  deploy_origin ↔ jetty_ramp_end: 25.0 m
+  deploy_origin ↔ jetty_base_right_end: 20.2 m
+  deploy_origin ↔ jetty_base_right_start: 2.4 m
+  pillar_1 ↔ pillar_2: 23.7 m
+  pillar_1 ↔ pillar_3: 44.1 m
+  pillar_1 ↔ pillar_4: 63.6 m
+  pillar_1 ↔ pillar_5: 78.7 m
+  pillar_1 ↔ pillar_6: 27.1 m
+  pillar_1 ↔ pillar_7: 34.0 m
+  pillar_1 ↔ pillar_8: 42.2 m
+  pillar_1 ↔ pillar_9: 60.1 m
+  pillar_1 ↔ pillar_10: 26.8 m
+  pillar_1 ↔ pillar_11: 34.3 m
+  pillar_1 ↔ breakwater_01: 98.7 m
+  pillar_1 ↔ breakwater_02: 132.9 m
+  pillar_1 ↔ breakwater_03: 117.8 m
+  pillar_1 ↔ breakwater_04: 79.1 m
+  pillar_1 ↔ breakwater_05: 48.4 m
+  pillar_1 ↔ breakwater_06: 92.3 m
+  pillar_1 ↔ breakwater_07: 76.1 m
+  pillar_1 ↔ breakwater_08: 41.9 m
+  pillar_1 ↔ gate_north: 116.2 m
+  pillar_1 ↔ gate_south: 59.2 m
+  pillar_1 ↔ jetty_base_start: 36.5 m
+  pillar_1 ↔ jetty_base_end: 27.1 m
+  pillar_1 ↔ jetty_ramp_start: 44.7 m
+  pillar_1 ↔ jetty_ramp_end: 33.6 m
+  pillar_1 ↔ jetty_base_right_end: 42.7 m
+  pillar_1 ↔ jetty_base_right_start: 24.6 m
+  pillar_2 ↔ pillar_3: 20.4 m
+  pillar_2 ↔ pillar_4: 39.9 m
+  pillar_2 ↔ pillar_5: 55.1 m
+  pillar_2 ↔ pillar_6: 49.9 m
+  pillar_2 ↔ pillar_7: 54.0 m
+  pillar_2 ↔ pillar_8: 65.8 m
+  pillar_2 ↔ pillar_9: 83.8 m
+  pillar_2 ↔ pillar_10: 49.7 m
+  pillar_2 ↔ pillar_11: 54.3 m
+  pillar_2 ↔ breakwater_01: 75.9 m
+  pillar_2 ↔ breakwater_02: 109.3 m
+  pillar_2 ↔ breakwater_03: 94.4 m
+  pillar_2 ↔ breakwater_04: 59.8 m
+  pillar_2 ↔ breakwater_05: 58.9 m
+  pillar_2 ↔ breakwater_06: 116.0 m
+  pillar_2 ↔ breakwater_07: 98.1 m
+  pillar_2 ↔ breakwater_08: 59.3 m
+  pillar_2 ↔ gate_north: 95.3 m
+  pillar_2 ↔ gate_south: 72.7 m
+  pillar_2 ↔ jetty_base_start: 54.7 m
+  pillar_2 ↔ jetty_base_end: 49.0 m
+  pillar_2 ↔ jetty_ramp_start: 59.9 m
+  pillar_2 ↔ jetty_ramp_end: 52.8 m
+  pillar_2 ↔ jetty_base_right_end: 66.4 m
+  pillar_2 ↔ jetty_base_right_start: 48.3 m
+  pillar_3 ↔ pillar_4: 19.5 m
+  pillar_3 ↔ pillar_5: 34.6 m
+  pillar_3 ↔ pillar_6: 70.1 m
+  pillar_3 ↔ pillar_7: 73.1 m
+  pillar_3 ↔ pillar_8: 86.3 m
+  pillar_3 ↔ pillar_9: 104.2 m
+  pillar_3 ↔ pillar_10: 69.9 m
+  pillar_3 ↔ pillar_11: 73.3 m
+  pillar_3 ↔ breakwater_01: 56.8 m
+  pillar_3 ↔ breakwater_02: 89.0 m
+  pillar_3 ↔ breakwater_03: 74.3 m
+  pillar_3 ↔ breakwater_04: 46.8 m
+  pillar_3 ↔ breakwater_05: 73.3 m
+  pillar_3 ↔ breakwater_06: 136.4 m
+  pillar_3 ↔ breakwater_07: 117.6 m
+  pillar_3 ↔ breakwater_08: 76.9 m
+  pillar_3 ↔ gate_north: 78.3 m
+  pillar_3 ↔ gate_south: 87.7 m
+  pillar_3 ↔ jetty_base_start: 73.1 m
+  pillar_3 ↔ jetty_base_end: 68.8 m
+  pillar_3 ↔ jetty_ramp_start: 76.6 m
+  pillar_3 ↔ jetty_ramp_end: 71.6 m
+  pillar_3 ↔ jetty_base_right_end: 86.8 m
+  pillar_3 ↔ jetty_base_right_start: 68.7 m
+  pillar_4 ↔ pillar_5: 15.1 m
+  pillar_4 ↔ pillar_6: 89.5 m
+  pillar_4 ↔ pillar_7: 91.8 m
+  pillar_4 ↔ pillar_8: 105.8 m
+  pillar_4 ↔ pillar_9: 123.7 m
+  pillar_4 ↔ pillar_10: 89.3 m
+  pillar_4 ↔ pillar_11: 92.0 m
+  pillar_4 ↔ breakwater_01: 40.0 m
+  pillar_4 ↔ breakwater_02: 69.6 m
+  pillar_4 ↔ breakwater_03: 55.4 m
+  pillar_4 ↔ breakwater_04: 40.2 m
+  pillar_4 ↔ breakwater_05: 89.1 m
+  pillar_4 ↔ breakwater_07: 136.5 m
+  pillar_4 ↔ breakwater_08: 94.9 m
+  pillar_4 ↔ gate_north: 64.3 m
+  pillar_4 ↔ gate_south: 104.0 m
+  pillar_4 ↔ jetty_base_start: 91.4 m
+  pillar_4 ↔ jetty_base_end: 88.0 m
+  pillar_4 ↔ jetty_ramp_start: 93.9 m
+  pillar_4 ↔ jetty_ramp_end: 90.2 m
+  pillar_4 ↔ jetty_base_right_end: 106.3 m
+  pillar_4 ↔ jetty_base_right_start: 88.2 m
+  pillar_5 ↔ pillar_6: 104.6 m
+  pillar_5 ↔ pillar_7: 106.7 m
+  pillar_5 ↔ pillar_8: 120.9 m
+  pillar_5 ↔ pillar_9: 138.8 m
+  pillar_5 ↔ pillar_10: 104.3 m
+  pillar_5 ↔ pillar_11: 106.7 m
+  pillar_5 ↔ breakwater_01: 28.9 m
+  pillar_5 ↔ breakwater_02: 54.5 m
+  pillar_5 ↔ breakwater_03: 41.2 m
+  pillar_5 ↔ breakwater_04: 41.7 m
+  pillar_5 ↔ breakwater_05: 102.5 m
+  pillar_5 ↔ breakwater_08: 109.1 m
+  pillar_5 ↔ gate_north: 55.3 m
+  pillar_5 ↔ gate_south: 117.0 m
+  pillar_5 ↔ jetty_base_start: 106.0 m
+  pillar_5 ↔ jetty_base_end: 103.0 m
+  pillar_5 ↔ jetty_ramp_start: 108.0 m
+  pillar_5 ↔ jetty_ramp_end: 104.9 m
+  pillar_5 ↔ jetty_base_right_end: 121.4 m
+  pillar_5 ↔ jetty_base_right_start: 103.3 m
+  pillar_6 ↔ pillar_7: 13.0 m
+  pillar_6 ↔ pillar_8: 19.1 m
+  pillar_6 ↔ pillar_9: 35.8 m
+  pillar_6 ↔ pillar_10: 18.6 m
+  pillar_6 ↔ pillar_11: 32.6 m
+  pillar_6 ↔ breakwater_01: 125.6 m
+  pillar_6 ↔ breakwater_03: 142.3 m
+  pillar_6 ↔ breakwater_04: 98.3 m
+  pillar_6 ↔ breakwater_05: 39.4 m
+  pillar_6 ↔ breakwater_06: 67.8 m
+  pillar_6 ↔ breakwater_07: 60.3 m
+  pillar_6 ↔ breakwater_08: 43.2 m
+  pillar_6 ↔ gate_north: 143.3 m
+  pillar_6 ↔ gate_south: 63.0 m
+  pillar_6 ↔ jetty_base_start: 18.5 m
+  pillar_6 ↔ jetty_base_end: 23.5 m
+  pillar_6 ↔ jetty_ramp_start: 29.6 m
+  pillar_6 ↔ jetty_ramp_end: 14.9 m
+  pillar_6 ↔ jetty_base_right_end: 20.5 m
+  pillar_6 ↔ jetty_base_right_start: 11.5 m
+  pillar_7 ↔ pillar_8: 27.7 m
+  pillar_7 ↔ pillar_9: 40.9 m
+  pillar_7 ↔ pillar_10: 31.6 m
+  pillar_7 ↔ pillar_11: 45.6 m
+  pillar_7 ↔ breakwater_01: 129.7 m
+  pillar_7 ↔ breakwater_03: 142.5 m
+  pillar_7 ↔ breakwater_04: 95.2 m
+  pillar_7 ↔ breakwater_05: 27.5 m
+  pillar_7 ↔ breakwater_06: 70.9 m
+  pillar_7 ↔ breakwater_07: 69.9 m
+  pillar_7 ↔ breakwater_08: 56.1 m
+  pillar_7 ↔ gate_north: 149.1 m
+  pillar_7 ↔ gate_south: 76.0 m
+  pillar_7 ↔ jetty_base_start: 5.8 m
+  pillar_7 ↔ jetty_base_end: 36.4 m
+  pillar_7 ↔ jetty_ramp_start: 16.8 m
+  pillar_7 ↔ jetty_ramp_end: 2.8 m
+  pillar_7 ↔ jetty_base_right_end: 29.6 m
+  pillar_7 ↔ jetty_base_right_start: 24.4 m
+  pillar_8 ↔ pillar_9: 17.9 m
+  pillar_8 ↔ pillar_10: 19.5 m
+  pillar_8 ↔ pillar_11: 28.9 m
+  pillar_8 ↔ breakwater_01: 140.0 m
+  pillar_8 ↔ breakwater_04: 117.2 m
+  pillar_8 ↔ breakwater_05: 55.0 m
+  pillar_8 ↔ breakwater_06: 50.2 m
+  pillar_8 ↔ breakwater_07: 42.3 m
+  pillar_8 ↔ breakwater_08: 38.1 m
+  pillar_8 ↔ gate_south: 56.4 m
+  pillar_8 ↔ jetty_base_start: 33.2 m
+  pillar_8 ↔ jetty_base_end: 23.7 m
+  pillar_8 ↔ jetty_ramp_start: 43.5 m
+  pillar_8 ↔ jetty_ramp_end: 30.4 m
+  pillar_8 ↔ jetty_base_right_end: 2.1 m
+  pillar_8 ↔ jetty_base_right_start: 17.8 m
+  pillar_9 ↔ pillar_10: 36.3 m
+  pillar_9 ↔ pillar_11: 42.1 m
+  pillar_9 ↔ breakwater_04: 134.1 m
+  pillar_9 ↔ breakwater_05: 66.2 m
+  pillar_9 ↔ breakwater_06: 32.3 m
+  pillar_9 ↔ breakwater_07: 34.1 m
+  pillar_9 ↔ breakwater_08: 49.1 m
+  pillar_9 ↔ gate_south: 64.3 m
+  pillar_9 ↔ jetty_base_start: 45.6 m
+  pillar_9 ↔ jetty_base_end: 39.6 m
+  pillar_9 ↔ jetty_ramp_start: 54.0 m
+  pillar_9 ↔ jetty_ramp_end: 43.6 m
+  pillar_9 ↔ jetty_base_right_end: 17.6 m
+  pillar_9 ↔ jetty_base_right_start: 35.6 m
+  pillar_10 ↔ pillar_11: 14.0 m
+  pillar_10 ↔ breakwater_01: 121.9 m
+  pillar_10 ↔ breakwater_03: 144.1 m
+  pillar_10 ↔ breakwater_04: 105.5 m
+  pillar_10 ↔ breakwater_05: 57.3 m
+  pillar_10 ↔ breakwater_06: 67.6 m
+  pillar_10 ↔ breakwater_07: 49.5 m
+  pillar_10 ↔ breakwater_08: 24.5 m
+  pillar_10 ↔ gate_north: 136.6 m
+  pillar_10 ↔ gate_south: 44.3 m
+  pillar_10 ↔ jetty_base_start: 37.1 m
+  pillar_10 ↔ jetty_base_end: 5.1 m
+  pillar_10 ↔ jetty_ramp_start: 48.2 m
+  pillar_10 ↔ jetty_ramp_end: 33.4 m
+  pillar_10 ↔ jetty_base_right_end: 19.0 m
+  pillar_10 ↔ jetty_base_right_start: 7.2 m
+  pillar_11 ↔ breakwater_01: 121.2 m
+  pillar_11 ↔ breakwater_03: 147.4 m
+  pillar_11 ↔ breakwater_04: 112.9 m
+  pillar_11 ↔ breakwater_05: 71.0 m
+  pillar_11 ↔ breakwater_06: 70.4 m
+  pillar_11 ↔ breakwater_07: 44.5 m
+  pillar_11 ↔ breakwater_08: 10.5 m
+  pillar_11 ↔ gate_north: 133.5 m
+  pillar_11 ↔ gate_south: 30.3 m
+  pillar_11 ↔ jetty_base_start: 51.1 m
+  pillar_11 ↔ jetty_base_end: 9.5 m
+  pillar_11 ↔ jetty_ramp_start: 62.2 m
+  pillar_11 ↔ jetty_ramp_end: 47.4 m
+  pillar_11 ↔ jetty_base_right_end: 27.6 m
+  pillar_11 ↔ jetty_base_right_start: 21.2 m
+  breakwater_01 ↔ breakwater_02: 40.0 m
+  breakwater_01 ↔ breakwater_03: 44.2 m
+  breakwater_01 ↔ breakwater_04: 69.4 m
+  breakwater_01 ↔ breakwater_05: 129.0 m
+  breakwater_01 ↔ breakwater_08: 121.3 m
+  breakwater_01 ↔ gate_north: 26.8 m
+  breakwater_01 ↔ gate_south: 124.9 m
+  breakwater_01 ↔ jetty_base_start: 129.9 m
+  breakwater_01 ↔ jetty_base_end: 119.5 m
+  breakwater_01 ↔ jetty_ramp_start: 133.2 m
+  breakwater_01 ↔ jetty_ramp_end: 128.3 m
+  breakwater_01 ↔ jetty_base_right_end: 140.2 m
+  breakwater_01 ↔ jetty_base_right_start: 122.3 m
+  breakwater_02 ↔ breakwater_03: 28.4 m
+  breakwater_02 ↔ breakwater_04: 80.6 m
+  breakwater_02 ↔ gate_north: 48.6 m
+  breakwater_03 ↔ breakwater_04: 54.6 m
+  breakwater_03 ↔ breakwater_05: 132.9 m
+  breakwater_03 ↔ gate_north: 64.9 m
+  breakwater_03 ↔ jetty_base_start: 140.8 m
+  breakwater_03 ↔ jetty_base_end: 143.2 m
+  breakwater_03 ↔ jetty_ramp_start: 140.7 m
+  breakwater_03 ↔ jetty_ramp_end: 140.4 m
+  breakwater_03 ↔ jetty_base_right_start: 142.4 m
+  breakwater_04 ↔ breakwater_05: 80.8 m
+  breakwater_04 ↔ breakwater_08: 118.8 m
+  breakwater_04 ↔ gate_north: 96.2 m
+  breakwater_04 ↔ gate_south: 132.3 m
+  breakwater_04 ↔ jetty_base_start: 92.3 m
+  breakwater_04 ↔ jetty_base_end: 106.1 m
+  breakwater_04 ↔ jetty_ramp_start: 90.0 m
+  breakwater_04 ↔ jetty_ramp_end: 92.8 m
+  breakwater_04 ↔ jetty_base_right_end: 118.3 m
+  breakwater_04 ↔ jetty_base_right_start: 101.7 m
+  breakwater_05 ↔ breakwater_06: 93.2 m
+  breakwater_05 ↔ breakwater_07: 97.1 m
+  breakwater_05 ↔ breakwater_08: 81.4 m
+  breakwater_05 ↔ gate_south: 101.0 m
+  breakwater_05 ↔ jetty_base_start: 21.8 m
+  breakwater_05 ↔ jetty_base_end: 61.5 m
+  breakwater_05 ↔ jetty_ramp_start: 12.3 m
+  breakwater_05 ↔ jetty_ramp_end: 25.0 m
+  breakwater_05 ↔ jetty_base_right_end: 57.0 m
+  breakwater_05 ↔ jetty_base_right_start: 50.1 m
+  breakwater_06 ↔ breakwater_07: 38.8 m
+  breakwater_06 ↔ breakwater_08: 74.6 m
+  breakwater_06 ↔ gate_south: 84.8 m
+  breakwater_06 ↔ jetty_base_start: 74.8 m
+  breakwater_06 ↔ jetty_base_end: 70.1 m
+  breakwater_06 ↔ jetty_ramp_start: 81.1 m
+  breakwater_06 ↔ jetty_ramp_end: 73.6 m
+  breakwater_06 ↔ jetty_base_right_end: 49.6 m
+  breakwater_06 ↔ jetty_base_right_start: 67.8 m
+  breakwater_07 ↔ breakwater_08: 43.9 m
+  breakwater_07 ↔ gate_south: 48.4 m
+  breakwater_07 ↔ jetty_base_start: 75.4 m
+  breakwater_07 ↔ jetty_base_end: 49.2 m
+  breakwater_07 ↔ jetty_ramp_start: 85.3 m
+  breakwater_07 ↔ jetty_ramp_end: 72.6 m
+  breakwater_07 ↔ jetty_base_right_end: 40.4 m
+  breakwater_07 ↔ jetty_base_right_start: 53.8 m
+  breakwater_08 ↔ gate_north: 131.6 m
+  breakwater_08 ↔ gate_south: 19.8 m
+  breakwater_08 ↔ jetty_base_start: 61.6 m
+  breakwater_08 ↔ jetty_base_end: 19.9 m
+  breakwater_08 ↔ jetty_ramp_start: 72.7 m
+  breakwater_08 ↔ jetty_ramp_end: 57.9 m
+  breakwater_08 ↔ jetty_base_right_end: 36.6 m
+  breakwater_08 ↔ jetty_base_right_start: 31.7 m
+  gate_north ↔ gate_south: 131.2 m
+  gate_north ↔ jetty_base_start: 150.0 m
+  gate_north ↔ jetty_base_end: 133.5 m
+  gate_north ↔ jetty_ramp_end: 148.0 m
+  gate_north ↔ jetty_base_right_start: 138.3 m
+  gate_south ↔ jetty_base_start: 81.4 m
+  gate_south ↔ jetty_base_end: 39.7 m
+  gate_south ↔ jetty_ramp_start: 92.5 m
+  gate_south ↔ jetty_ramp_end: 77.7 m
+  gate_south ↔ jetty_base_right_end: 54.7 m
+  gate_south ↔ jetty_base_right_start: 51.6 m
+  jetty_base_start ↔ jetty_base_end: 41.8 m
+  jetty_base_start ↔ jetty_ramp_start: 11.1 m
+  jetty_base_start ↔ jetty_ramp_end: 3.7 m
+  jetty_base_start ↔ jetty_base_right_end: 35.2 m
+  jetty_base_start ↔ jetty_base_right_start: 29.8 m
+  jetty_base_end ↔ jetty_ramp_start: 52.8 m
+  jetty_base_end ↔ jetty_ramp_end: 38.1 m
+  jetty_base_end ↔ jetty_base_right_end: 22.9 m
+  jetty_base_end ↔ jetty_base_right_start: 12.0 m
+  jetty_ramp_start ↔ jetty_ramp_end: 14.8 m
+  jetty_ramp_start ↔ jetty_base_right_end: 45.5 m
+  jetty_ramp_start ↔ jetty_base_right_start: 40.9 m
+  jetty_ramp_end ↔ jetty_base_right_end: 32.3 m
+  jetty_ramp_end ↔ jetty_base_right_start: 26.2 m
+  jetty_base_right_end ↔ jetty_base_right_start: 18.1 m

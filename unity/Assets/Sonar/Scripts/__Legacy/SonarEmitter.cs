@@ -4,6 +4,29 @@ public class SonarEmitter : MonoBehaviour
 {
     public SonarConfig config;
 
+    [Header("Debug")]
+    public bool showBeams = true;
+
+    void OnDrawGizmos()
+    {
+        if (!showBeams || config == null) return;
+
+        // Fan edges in red
+        Vector3 leftDir = GetBeamDirection(0);
+        Vector3 rightDir = GetBeamDirection(config.numberOfBeams - 1);
+        Gizmos.color = Color.red;
+        Gizmos.DrawRay(transform.position, leftDir * config.maxRange);
+        Gizmos.DrawRay(transform.position, rightDir * config.maxRange);
+
+        // Every 4th beam in yellow
+        for (int b = 0; b < config.numberOfBeams; b += 4)
+        {
+            Vector3 dir = GetBeamDirection(b);
+            Gizmos.color = Color.yellow;
+            Gizmos.DrawRay(transform.position, dir * config.maxRange);
+        }
+    }
+
     [Header("Output")]
     public float[,] intensityImage; // [beamIndex, rangeBinIndex]
 

@@ -14,9 +14,16 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::SonarConfig
   numberOfBeams: 256
   swathAngleDeg: 150
-  maxRange: 15
+  verticalFOVDeg: 25
+  subBeamsH: 5
+  subBeamsV: 9
+  maxRange: 100
   numberOfRangeBins: 650
   pingRateHz: 15
   beamWidthAlongTrackDeg: 1.5
   mountTiltDeg: 0
   mountRollDeg: 0
+  speedOfSound: 1500
+  sourceLevel_dB: 220
+  pulseLength_s: 0.0001
+  frequency_Hz: 400000

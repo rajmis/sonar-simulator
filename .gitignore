@@ -11,6 +11,7 @@ unity/UserSettings/
 unity/MemoryCaptures/
 unity/Recordings/
 unity/Assets/Plugins/Editor/JetBrains*
+unity/Assets/_Recovery/
 
 # Unity auto-generated
 *.csproj
