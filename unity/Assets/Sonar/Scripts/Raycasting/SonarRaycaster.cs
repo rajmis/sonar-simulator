@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using UnityEngine;
 using Unity.Collections;
 using Unity.Jobs;
@@ -7,9 +8,13 @@ using Sonar.Core;
 namespace Sonar.Raycasting
 {
     /// <summary>
-    /// Fires rays in a 2D cone pattern per beam and collects raw hit data.
-    /// All acoustic processing is handled by the Python processor.
-    /// 
+    /// Captures a polar depth + material map of the sonar's field of view.
+    ///
+    /// Rays are cast on a regular (azimuth × elevation) grid covering the
+    /// swath plus padding on every side. Each grid cell records the hit
+    /// range and the material type of the object hit — nothing else.
+    /// All acoustic processing happens in the Python processor.
+    ///
     /// Attach to the sonar GameObject. Requires a SonarConfig reference.
     /// </summary>
     public class SonarRaycaster : MonoBehaviour
@@ -21,16 +26,17 @@ namespace Sonar.Raycasting
         [Tooltip("Layer mask for sonar targets")]
         public LayerMask targetLayer;
 
-        /// <summary>Fired when a ping's ray data is ready for transmission.</summary>
-        public event Action<PingData> OnPingReady;
+        /// <summary>Fired when a frame's depth/material data is ready for transmission.</summary>
+        public event Action<DepthFrame> OnFrameReady;
 
         private uint _pingCounter;
         private float _pingTimer;
 
-        // Pre-allocated arrays
+        // Local-space grid ray directions, row-major (row = elevation, col = azimuth)
         private Vector3[] _rayDirs;
-        private int[] _beamIndices;
-        private int[] _subBeamIndices;
+
+        // Cache collider → material type so we don't walk the hierarchy per ray
+        private readonly Dictionary<Collider, byte> _materialCache = new();
 
         private void Start()
         {
@@ -57,48 +63,32 @@ namespace Sonar.Raycasting
         }
 
         /// <summary>
-        /// Pre-compute ray directions in local space for all beams × sub-beams.
-        /// Directions are relative to the sonar's forward (Z+) axis.
+        /// Pre-compute local-space ray directions on the capture grid.
+        /// Same angular convention as the legacy beam geometry:
+        /// azimuth fans about the forward (Z+) axis starting from straight down.
         /// </summary>
         private void PrecomputeRayDirections()
         {
-            int totalRays = config.TotalRays;
-            _rayDirs = new Vector3[totalRays];
-            _beamIndices = new int[totalRays];
-            _subBeamIndices = new int[totalRays];
+            int w = config.azimuthSamples;
+            int h = config.elevationSamples;
+            _rayDirs = new Vector3[w * h];
 
-            float halfVFOV = config.verticalFOVDeg / 2f;
-            float halfBeamWidth = config.AngularResolutionDeg / 2f;
+            float azSpan = config.swathAngleDeg + 2f * config.capturePaddingDeg;
+            float elSpan = config.verticalFOVDeg + 2f * config.capturePaddingDeg;
 
-            int idx = 0;
-            for (int beam = 0; beam < config.numberOfBeams; beam++)
+            Quaternion tilt = Quaternion.AngleAxis(config.mountTiltDeg, Vector3.right);
+
+            for (int row = 0; row < h; row++)
             {
-                float halfSwath = config.swathAngleDeg / 2f;
-                float angleStep = config.AngularResolutionDeg;
-                float beamAngle = -halfSwath + (beam * angleStep) + (angleStep / 2f);
+                float el = -elSpan / 2f + (row + 0.5f) * elSpan / h;
+                Quaternion vert = Quaternion.AngleAxis(el, Vector3.right);
 
-                for (int sv = 0; sv < config.subBeamsV; sv++)
+                for (int col = 0; col < w; col++)
                 {
-                    float vOffset = Mathf.Lerp(-halfVFOV, halfVFOV,
-                        (sv + 0.5f) / config.subBeamsV);
+                    float az = -azSpan / 2f + (col + 0.5f) * azSpan / w;
+                    Quaternion fan = Quaternion.AngleAxis(az, Vector3.forward);
 
-                    for (int sh = 0; sh < config.subBeamsH; sh++)
-                    {
-                        float hOffset = Mathf.Lerp(-halfBeamWidth, halfBeamWidth,
-                            (sh + 0.5f) / config.subBeamsH);
-
-                        // Match legacy SonarGPUEmitter beam geometry exactly
-                        Quaternion tilt = Quaternion.AngleAxis(config.mountTiltDeg, Vector3.right);
-                        Quaternion fan = Quaternion.AngleAxis(beamAngle + hOffset, Vector3.forward);
-                        Quaternion vert = Quaternion.AngleAxis(vOffset, Vector3.right);
-
-                        Vector3 localDir = fan * vert * tilt * Vector3.down;
-
-                        _rayDirs[idx] = localDir;
-                        _beamIndices[idx] = beam;
-                        _subBeamIndices[idx] = sv * config.subBeamsH + sh;
-                        idx++;
-                    }
+                    _rayDirs[row * w + col] = fan * vert * tilt * Vector3.down;
                 }
             }
         }
@@ -106,70 +96,69 @@ namespace Sonar.Raycasting
         private void ExecutePing()
         {
             _pingCounter++;
-            int totalRays = config.numberOfBeams * config.SubBeamsPerBeam;
+            int w = config.azimuthSamples;
+            int h = config.elevationSamples;
+            int total = w * h;
 
             Transform t = transform;
             Vector3 sonarPos = t.position;
             Quaternion sonarRot = t.rotation;
 
-            // Batch raycast using RaycastCommand for parallel execution
-            var commands = new NativeArray<RaycastCommand>(totalRays, Allocator.TempJob);
-            var results = new NativeArray<RaycastHit>(totalRays, Allocator.TempJob);
+            var commands = new NativeArray<RaycastCommand>(total, Allocator.TempJob);
+            var results = new NativeArray<RaycastHit>(total, Allocator.TempJob);
 
             var queryParams = new QueryParameters(targetLayer, false, QueryTriggerInteraction.Ignore, false);
 
-            for (int i = 0; i < totalRays; i++)
+            for (int i = 0; i < total; i++)
             {
                 Vector3 worldDir = sonarRot * _rayDirs[i];
                 commands[i] = new RaycastCommand(sonarPos, worldDir, queryParams, config.maxRange);
             }
 
-            // Schedule batch raycast on job system
             JobHandle handle = RaycastCommand.ScheduleBatch(commands, results, 256);
             handle.Complete();
 
-            // Collect results
-            var rays = new RayHitData[totalRays];
-            for (int i = 0; i < totalRays; i++)
+            var ranges = new float[total];
+            var materials = new byte[total];
+
+            for (int i = 0; i < total; i++)
             {
                 RaycastHit hit = results[i];
-                bool didHit = hit.collider != null;
-
-                rays[i] = new RayHitData
+                if (hit.collider != null)
                 {
-                    beamIndex = (ushort)_beamIndices[i],
-                    subBeamIndex = (ushort)_subBeamIndices[i],
-                    didHit = didHit,
-                    hitDistance = didHit ? hit.distance : 0f,
-                    hitNormal = didHit ? hit.normal : Vector3.zero,
-                    rayDir = sonarRot * _rayDirs[i],
-                    objectID = didHit ? (ushort)(hit.collider.gameObject.GetInstanceID() & 0xFFFF) : (ushort)0,
-                    materialType = didHit ? GetMaterialType(hit.collider) : (byte)0,
-                    hitPoint = didHit ? hit.point : Vector3.zero,
-                };
+                    ranges[i] = hit.distance;
+                    materials[i] = GetMaterialType(hit.collider);
+                }
+                // else: ranges[i] stays 0 = no return
             }
 
             commands.Dispose();
             results.Dispose();
 
-            var ping = new PingData
+            var frame = new DepthFrame
             {
                 pingID = _pingCounter,
                 timestamp = Time.timeAsDouble,
                 sonarPos = sonarPos,
                 sonarRot = sonarRot,
-                rays = rays,
+                width = w,
+                height = h,
+                ranges = ranges,
+                materials = materials,
             };
 
-            OnPingReady?.Invoke(ping);
+            OnFrameReady?.Invoke(frame);
         }
 
         private byte GetMaterialType(Collider col)
         {
+            if (_materialCache.TryGetValue(col, out byte cached))
+                return cached;
+
             var props = col.GetComponentInParent<AcousticProperties>();
-            if (props != null)
-                return (byte)props.materialType;
-            return 0; // default
+            byte mat = props != null ? (byte)props.materialType : (byte)0;
+            _materialCache[col] = mat;
+            return mat;
         }
     }
 }

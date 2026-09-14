@@ -5,49 +5,57 @@
 Hybrid Unity3D + Python multibeam sonar simulator modelling a NORBIT WBMS.
 
 ```
-Unity (raycasting)  ──TCP──▶  Python (acoustic processing)  ──TCP──▶  Unity (display)
-                     localhost:9000 (single bidirectional connection)
+Unity (depth-map capture)  ──TCP──▶  Python (acoustic collapse, GPU)  ──TCP──▶  Unity (display)
+                            localhost:9000 (single bidirectional connection)
 ```
 
 ## Data Flow
 
-1. **Unity SonarRaycaster** fires 256×45 = 11,520 rays per ping via batch `RaycastCommand`
-2. **Unity SonarNetworkClient** serialises 80-byte header + 48 bytes/ray, sends length-prefixed over TCP
-3. **Python SonarTCPServer** reads the complete message (553 KB)
-4. **Python process_ping** runs: beam weights → sonar equation → range binning → shadows → dB normalisation → noise
-5. **Python** returns length-prefixed float32 intensity image (256×650, normalised 0–1) over same TCP connection
-6. **Unity SonarNetworkClient** receives on background thread, queues to main thread
-7. **Unity SonarDisplay** applies colour map gradient, renders through fan-view shader
+1. **Unity SonarRaycaster** casts a polar ray grid (default 512×128 = 65,536 rays)
+   covering swath + padding × vFOV + padding via batch `RaycastCommand`
+2. Each grid cell records only **hit range** (float32, 0 = miss) and
+   **material ID** (uint8)
+3. **Unity SonarNetworkClient** serialises 88-byte header + range plane +
+   material plane (~330 KB), sends length-prefixed over TCP
+4. **Python SonarTCPServer** reads the complete frame
+5. **Python process_frame** (PyTorch, CUDA when available) runs:
+   point reconstruction → normals from depth gradients → sonar equation →
+   beam/range binning → shadows → dB normalisation → noise
+6. **Python** returns length-prefixed float32 intensity image (256×650,
+   normalised 0–1) over the same TCP connection
+7. **Unity SonarNetworkClient** receives on background thread, queues to main thread
+8. **Unity SonarDisplay** applies colour map gradient, renders through fan-view shader
 
 ## Key Files
 
 | Path | Purpose |
 |------|---------|
-| `shared/protocol.md` | Byte-level TCP packet format |
-| `processor/src/protocol.py` | Binary parse/build, numpy structured arrays |
+| `shared/PROTOCOL.md` | Byte-level TCP packet format |
+| `processor/src/protocol.py` | Binary parse/build of depth frames |
 | `processor/src/network.py` | TCP server, length-prefixed messages |
-| `processor/src/processing.py` | Sonar equation, binning, shadows, normalisation, noise |
+| `processor/src/processing.py` | Torch frame collapse: normals, sonar equation, binning, noise |
 | `processor/src/materials.py` | YAML material properties loader |
 | `processor/src/main.py` | Entry point: `python -m processor.src.main` |
-| `processor/config/norbit_wbms.yaml` | Material & noise config |
-| `processor/tests/test_pipeline.py` | Offline end-to-end test |
-| `TECHNICAL_DOCUMENTATION.md` | Complete inner workings reference |
+| `processor/config/materials.yaml` | Material & noise config |
+| `processor/tests/test_pipeline.py` | Offline end-to-end processing test |
+| `processor/tests/test_tcp_roundtrip.py` | TCP round-trip test (plays Unity's role) |
+| `docs/technical_documentation.md` | Complete inner workings reference |
 
 ## Running
 
 ```bash
-# Offline test (no Unity needed)
+# Offline tests (no Unity needed)
 python3 -m processor.tests.test_pipeline
+python3 -m processor.tests.test_tcp_roundtrip
 
 # Full pipeline
 python3 -m processor.src.main          # start Python first
-# then hit Play in Unity
+# then hit Play in Unity (SampleScene)
 ```
 
 ## Adding a New Processing Stage
 
-1. Add function in `processor/src/processing.py`
-2. Call it from `process_ping()` at the appropriate point
-3. If it needs config, add params to `norbit_wbms.yaml` and load in `materials.py`
-4. Test with `python3 -m processor.tests.test_pipeline`
-5. Update `TECHNICAL_DOCUMENTATION.md`
+1. Add a stage in `processor/src/processing.py` and call it from `process_frame()`
+2. If it needs config, add params to `materials.yaml` and load in `materials.py`
+3. Test with `python3 -m processor.tests.test_pipeline`
+4. Update `docs/technical_documentation.md`

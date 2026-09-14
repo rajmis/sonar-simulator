@@ -11,8 +11,8 @@ namespace Sonar.Network
 {
     /// <summary>
     /// Single TCP connection to Python processor.
-    /// Sends length-prefixed ping payloads, receives length-prefixed intensity images.
-    /// Replaces both SonarSender and SonarReceiver.
+    /// Sends length-prefixed depth/material frames, receives length-prefixed
+    /// intensity images. See shared/PROTOCOL.md for the wire format.
     /// </summary>
     public class SonarNetworkClient : MonoBehaviour
     {
@@ -30,8 +30,7 @@ namespace Sonar.Network
         /// <summary>Fired on main thread when a new intensity image is ready.</summary>
         public event Action<uint, Texture2D> OnImageReady;
 
-        private const int PING_HEADER_SIZE = 80;
-        private const int RAY_RECORD_SIZE = 48;
+        private const int FRAME_HEADER_SIZE = 88;
         private const int RESPONSE_HEADER_SIZE = 8;
 
         private TcpClient _tcp;
@@ -60,7 +59,8 @@ namespace Sonar.Network
                 return;
             }
 
-            int maxPayload = PING_HEADER_SIZE + config.TotalRays * RAY_RECORD_SIZE;
+            int gridCells = config.azimuthSamples * config.elevationSamples;
+            int maxPayload = FRAME_HEADER_SIZE + gridCells * (sizeof(float) + sizeof(byte));
             _sendBuffer = new byte[maxPayload];
 
             _texture = new Texture2D(
@@ -71,7 +71,7 @@ namespace Sonar.Network
             _texture.filterMode = FilterMode.Bilinear;
             _texture.wrapMode = TextureWrapMode.Clamp;
 
-            _raycaster.OnPingReady += HandlePingReady;
+            _raycaster.OnFrameReady += HandleFrameReady;
 
             TryConnect();
         }
@@ -79,7 +79,7 @@ namespace Sonar.Network
         private void OnDestroy()
         {
             if (_raycaster != null)
-                _raycaster.OnPingReady -= HandlePingReady;
+                _raycaster.OnFrameReady -= HandleFrameReady;
 
             _running = false;
             _receiveThread?.Join(1000);
@@ -137,62 +137,51 @@ namespace Sonar.Network
             }
         }
 
-        private void HandlePingReady(PingData ping)
+        private void HandleFrameReady(DepthFrame frame)
         {
             if (!connected) return;
 
-            int totalRays = ping.rays.Length;
-            int payloadSize = PING_HEADER_SIZE + totalRays * RAY_RECORD_SIZE;
+            int cells = frame.width * frame.height;
+            int payloadSize = FRAME_HEADER_SIZE + cells * (sizeof(float) + sizeof(byte));
 
             if (_sendBuffer.Length < payloadSize)
                 _sendBuffer = new byte[payloadSize];
 
             int offset = 0;
 
-            // --- Ping header (80 bytes) ---
-            WriteUInt32(_sendBuffer, ref offset, ping.pingID);
-            WriteFloat64(_sendBuffer, ref offset, ping.timestamp);
-            WriteFloat32(_sendBuffer, ref offset, ping.sonarPos.x);
-            WriteFloat32(_sendBuffer, ref offset, ping.sonarPos.y);
-            WriteFloat32(_sendBuffer, ref offset, ping.sonarPos.z);
-            WriteFloat32(_sendBuffer, ref offset, ping.sonarRot.x);
-            WriteFloat32(_sendBuffer, ref offset, ping.sonarRot.y);
-            WriteFloat32(_sendBuffer, ref offset, ping.sonarRot.z);
-            WriteFloat32(_sendBuffer, ref offset, ping.sonarRot.w);
+            // --- Frame header (88 bytes) ---
+            WriteUInt32(_sendBuffer, ref offset, frame.pingID);
+            WriteFloat64(_sendBuffer, ref offset, frame.timestamp);
+            WriteFloat32(_sendBuffer, ref offset, frame.sonarPos.x);
+            WriteFloat32(_sendBuffer, ref offset, frame.sonarPos.y);
+            WriteFloat32(_sendBuffer, ref offset, frame.sonarPos.z);
+            WriteFloat32(_sendBuffer, ref offset, frame.sonarRot.x);
+            WriteFloat32(_sendBuffer, ref offset, frame.sonarRot.y);
+            WriteFloat32(_sendBuffer, ref offset, frame.sonarRot.z);
+            WriteFloat32(_sendBuffer, ref offset, frame.sonarRot.w);
             WriteUInt16(_sendBuffer, ref offset, (ushort)config.numberOfBeams);
-            WriteUInt16(_sendBuffer, ref offset, (ushort)config.SubBeamsPerBeam);
-            WriteFloat32(_sendBuffer, ref offset, config.maxRange);
             WriteUInt16(_sendBuffer, ref offset, (ushort)config.numberOfRangeBins);
+            WriteFloat32(_sendBuffer, ref offset, config.maxRange);
             WriteFloat32(_sendBuffer, ref offset, config.swathAngleDeg);
             WriteFloat32(_sendBuffer, ref offset, config.verticalFOVDeg);
+            WriteFloat32(_sendBuffer, ref offset, config.capturePaddingDeg);
+            WriteFloat32(_sendBuffer, ref offset, config.mountTiltDeg);
             WriteFloat32(_sendBuffer, ref offset, config.speedOfSound);
             WriteFloat32(_sendBuffer, ref offset, config.sourceLevel_dB);
             WriteFloat32(_sendBuffer, ref offset, config.pulseLength_s);
             WriteFloat32(_sendBuffer, ref offset, config.frequency_Hz);
-            WriteUInt16(_sendBuffer, ref offset, (ushort)config.subBeamsH);
-            WriteUInt16(_sendBuffer, ref offset, (ushort)config.subBeamsV);
-            WriteUInt16(_sendBuffer, ref offset, 0); // reserved
+            WriteUInt16(_sendBuffer, ref offset, (ushort)frame.width);
+            WriteUInt16(_sendBuffer, ref offset, (ushort)frame.height);
+            WriteUInt32(_sendBuffer, ref offset, 0); // reserved
 
-            // --- Ray records ---
-            for (int i = 0; i < totalRays; i++)
-            {
-                ref RayHitData ray = ref ping.rays[i];
-                WriteUInt16(_sendBuffer, ref offset, ray.beamIndex);
-                WriteUInt16(_sendBuffer, ref offset, ray.subBeamIndex);
-                _sendBuffer[offset++] = (byte)(ray.didHit ? 1 : 0);
-                WriteFloat32(_sendBuffer, ref offset, ray.hitDistance);
-                WriteFloat32(_sendBuffer, ref offset, ray.hitNormal.x);
-                WriteFloat32(_sendBuffer, ref offset, ray.hitNormal.y);
-                WriteFloat32(_sendBuffer, ref offset, ray.hitNormal.z);
-                WriteFloat32(_sendBuffer, ref offset, ray.rayDir.x);
-                WriteFloat32(_sendBuffer, ref offset, ray.rayDir.y);
-                WriteFloat32(_sendBuffer, ref offset, ray.rayDir.z);
-                WriteUInt16(_sendBuffer, ref offset, ray.objectID);
-                _sendBuffer[offset++] = ray.materialType;
-                WriteFloat32(_sendBuffer, ref offset, ray.hitPoint.x);
-                WriteFloat32(_sendBuffer, ref offset, ray.hitPoint.y);
-                WriteFloat32(_sendBuffer, ref offset, ray.hitPoint.z);
-            }
+            // --- Range plane (float32 × cells) ---
+            // Bulk copy: all Unity target platforms are little-endian.
+            Buffer.BlockCopy(frame.ranges, 0, _sendBuffer, offset, cells * sizeof(float));
+            offset += cells * sizeof(float);
+
+            // --- Material plane (uint8 × cells) ---
+            Buffer.BlockCopy(frame.materials, 0, _sendBuffer, offset, cells);
+            offset += cells;
 
             // Send: [4-byte length] + [payload]
             byte[] lengthHeader = BitConverter.GetBytes((uint)payloadSize);

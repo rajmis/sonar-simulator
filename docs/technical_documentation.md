@@ -2,22 +2,22 @@
 
 ## 1. System Overview
 
-This is a hybrid Unity3D + Python multibeam sonar simulator modelling a NORBIT WBMS. Unity handles real-time raycasting (geometric hit detection) and Python handles all acoustic signal processing (intensity computation, noise modelling, image generation). The two processes communicate over a single TCP connection on localhost port 9000.
+This is a hybrid Unity3D + Python multibeam sonar simulator modelling a NORBIT WBMS. Unity captures a polar depth + material map of the sonar's field of view (geometry only) and Python handles all acoustic signal processing (intensity computation, noise modelling, image generation) — on GPU via PyTorch when available. The two processes communicate over a single TCP connection on localhost port 9000.
 
 **Pipeline per ping cycle:**
 
 ```
-Unity SonarRaycaster (11,520 rays via batch Physics)
+Unity SonarRaycaster (512×128 polar ray grid via batch Physics)
         │
         ▼
-Unity SonarNetworkClient (serialise 553 KB, TCP send)
+Unity SonarNetworkClient (serialise ~330 KB depth + material frame, TCP send)
         │
         ▼ TCP localhost:9000
         │
-Python SonarTCPServer (parse header + rays)
+Python SonarTCPServer (parse header + range/material planes)
         │
         ▼
-Python process_ping (sonar equation → range binning → shadows → dB normalisation → noise)
+Python process_frame (points → normals → sonar equation → binning → shadows → dB normalisation → noise)
         │
         ▼
 Python SonarTCPServer (send 665 KB float32 image)
@@ -36,7 +36,7 @@ Unity SonarDisplay (colour map → RGBA32 texture → fan shader render)
 
 ## 2. Unity Side
 
-Unity's role is exclusively geometric: fire rays, detect hits, transmit raw hit data, receive processed image, render it. Unity performs zero acoustic computation.
+Unity's role is exclusively geometric: capture a depth + material map of the sonar's field of view, transmit it, receive the processed image, render it. Unity performs zero acoustic computation.
 
 ### 2.1 SonarConfig (ScriptableObject)
 
@@ -44,10 +44,13 @@ All sonar parameters are centralised in a ScriptableObject asset (`DefaultConfig
 
 | Parameter | Default | Description |
 |-----------|---------|-------------|
-| numberOfBeams | 256 | Beams across the swath |
+| numberOfBeams | 256 | Beams across the swath (output image width) |
 | swathAngleDeg | 150° | Horizontal field of view |
 | verticalFOVDeg | 25° | Vertical beam spread |
-| subBeamsH × subBeamsV | 5 × 9 = 45 | Sub-beam grid per beam |
+| azimuthSamples | 512 | Capture grid columns across swath + padding |
+| elevationSamples | 128 | Capture grid rows across vFOV + padding |
+| capturePaddingDeg | 2° | Extra grid margin per side (used by Python for normals) |
+| subBeamsH × subBeamsV | 5 × 9 = 45 | Legacy emitters only |
 | maxRange | 100 m | Maximum detection range |
 | numberOfRangeBins | 650 | Range resolution in output image |
 | pingRateHz | 15 Hz | Pings per second |
@@ -66,23 +69,22 @@ All sonar parameters are centralised in a ScriptableObject asset (`DefaultConfig
 
 **File:** `Scripts/Raycasting/SonarRaycaster.cs`
 
-Fires rays in a 2D cone pattern matching NORBIT WBMS beam geometry. For each of 256 beams, generates a 5×9 sub-beam grid = 11,520 total rays per ping.
+Captures a polar depth + material map of the sonar's field of view. Rays are cast on a regular azimuth × elevation grid (default 512 × 128) spanning `swathAngleDeg + 2·capturePaddingDeg` horizontally and `verticalFOVDeg + 2·capturePaddingDeg` vertically.
 
-**Beam direction computation (pre-computed on Start in local space):**
+**Grid direction computation (pre-computed on Start in local space):**
 
-1. **Base beam angle:** Evenly distributed across 150° swath, offset by half angular resolution to centre beams within cells.
-2. **Sub-beam offsets:** Vertical sub-beams span the 25° vertical FOV. Horizontal sub-beams span the angular resolution width of one beam.
-3. **Rotation chain:** Mount tilt (around X) → Fan angle (around Z) → Vertical offset (around X) → applied to `Vector3.down`. This produces the downward-looking fan pattern of hull-mounted multibeam sonars. This rotation chain matches the legacy `SonarGPUEmitter.GetBeamDirection()` exactly.
+1. **Cell centres:** Row `r` maps to elevation `-elSpan/2 + (r + 0.5)·elSpan/H`; column `c` maps to azimuth `-azSpan/2 + (c + 0.5)·azSpan/W`.
+2. **Rotation chain:** Fan angle (around Z) → Elevation (around X) → Mount tilt (around X) → applied to `Vector3.down`. Same downward-looking fan convention as the legacy `SonarGPUEmitter.GetBeamDirection()`.
 
-**Batch raycasting:** Uses Unity's `RaycastCommand` with `NativeArray` allocations. All 11,520 raycasts are scheduled on the Job System for parallel execution. Only colliders on the `SonarTarget` physics layer are detected.
+**Batch raycasting:** Uses Unity's `RaycastCommand` with `NativeArray` allocations; all grid rays are scheduled on the Job System for parallel execution. Only colliders on the `SonarTarget` physics layer are detected.
 
-**Hit data collected per ray:** beam index, sub-beam index, did hit (bool), hit distance (m), hit normal (Vector3), ray direction (Vector3), object ID, material type (from `AcousticProperties` component), hit point (Vector3). Misses record `didHit=false` with zeroed fields.
+**Data collected per grid cell:** hit range in metres (float32, `0` = no return) and material type (uint8, from `AcousticProperties` via a collider → material cache). Nothing else — no normals, hit points, or per-ray records; Python reconstructs geometry from the range grid.
 
-**Output:** Fires `OnPingReady(PingData)` event with all ray data packaged.
+**Output:** Fires `OnFrameReady(DepthFrame)` event with the two planes packaged.
 
 ### 2.3 AcousticProperties (MonoBehaviour)
 
-Attached to scene objects (JettyPile, Seabed, etc.) on the `SonarTarget` physics layer. Contains a `materialType` enum that indexes into the Python-side YAML material table. The raycaster reads this via `GetComponentInParent<AcousticProperties>()` on hit colliders.
+Attached to scene objects (JettyPile, Seabed, etc.) on the `SonarTarget` physics layer. Contains a `materialType` enum with explicit indices matching `materials.yaml`: Default = 0, Steel = 1, Concrete = 2, Sand = 3, Mud = 4, Rock = 5, Wood = 6, Rubber = 7. The raycaster reads this via `GetComponentInParent<AcousticProperties>()` on hit colliders (cached per collider).
 
 ### 2.4 SonarNetworkClient (TCP)
 
@@ -90,7 +92,7 @@ Attached to scene objects (JettyPile, Seabed, etc.) on the `SonarTarget` physics
 
 Manages a single bidirectional TCP connection to the Python processor. Replaces the earlier UDP-based SonarSender + SonarReceiver (which suffered from chunk loss due to OS socket buffer overflow at 15 Hz).
 
-**Sending (main thread):** When `OnPingReady` fires, serialises the ping into the binary protocol: 4-byte length prefix + 80-byte ping header + 48 bytes per ray. All little-endian. Total per ping: 4 + 80 + (11,520 × 48) = 553,044 bytes. Sent via `NetworkStream.Write`.
+**Sending (main thread):** When `OnFrameReady` fires, serialises the frame into the binary protocol: 4-byte length prefix + 88-byte frame header + range plane (W·H float32) + material plane (W·H uint8). All little-endian; the planes are bulk-copied with `Buffer.BlockCopy`. Total per ping at 512×128: 4 + 88 + 262,144 + 65,536 = 327,772 bytes. Sent via `NetworkStream.Write`.
 
 **Receiving (background thread):** A dedicated `Thread` reads length-prefixed responses from the TCP stream. Each response = 4-byte length + 8-byte response header + float32 intensity data (256×650×4 bytes). Completed images are queued into a `ConcurrentQueue` and dequeued on the main thread in `Update()`.
 
@@ -98,11 +100,11 @@ Manages a single bidirectional TCP connection to the Python processor. Replaces 
 
 **Inspector fields:** `host` (default 127.0.0.1), `port` (default 9000), `config` (SonarConfig), plus read-only status fields `connected` and `pingsProcessed`.
 
-### 2.5 RayHitData / PingData (Structs)
+### 2.5 DepthFrame (Struct)
 
-**File:** `Scripts/Core/RayHitData.cs`
+**File:** `Scripts/Core/SonarFrame.cs`
 
-`RayHitData` holds per-ray data (matches the 48-byte wire format). `PingData` packages a complete ping: ping ID, timestamp, sonar pose, and the ray array.
+`DepthFrame` packages one capture: `pingID`, `timestamp`, `sonarPos`, `sonarRot`, grid `width`/`height`, and the two row-major planes `ranges[]` (float32) and `materials[]` (uint8).
 
 ### 2.6 SonarBridge (Orchestrator)
 
@@ -139,11 +141,11 @@ All communication uses length-prefixed binary messages over a single TCP connect
 
 Every message in both directions: `[4-byte uint32 payload length][payload bytes]`. TCP guarantees ordered, reliable delivery. No chunking or reassembly needed.
 
-### 3.2 Ping Payload (Unity → Python)
+### 3.2 Depth Frame Payload (Unity → Python)
 
-Total: 80 + (numberOfBeams × subBeamsPerBeam × 48) bytes.
+Total: 88 + (W·H × 4) + (W·H × 1) bytes.
 
-**Ping header (80 bytes):**
+**Frame header (88 bytes):**
 
 | Offset | Type | Field | Description |
 |--------|------|-------|-------------|
@@ -151,33 +153,26 @@ Total: 80 + (numberOfBeams × subBeamsPerBeam × 48) bytes.
 | 4 | float64 | timestamp | Unity Time.timeAsDouble |
 | 12 | float32×3 | sonarPos | World position (x, y, z) |
 | 24 | float32×4 | sonarRot | Quaternion (x, y, z, w) |
-| 40 | uint16 | numberOfBeams | e.g. 256 |
-| 42 | uint16 | subBeamsPerBeam | e.g. 45 |
+| 40 | uint16 | numberOfBeams | Output image width (e.g. 256) |
+| 42 | uint16 | numberOfRangeBins | Output image height (e.g. 650) |
 | 44 | float32 | maxRange | Metres |
-| 48 | uint16 | numberOfRangeBins | e.g. 650 |
-| 50 | float32 | swathAngleDeg | Horizontal FOV |
-| 54 | float32 | verticalFOVDeg | Vertical FOV |
-| 58 | float32 | speedOfSound | m/s |
-| 62 | float32 | sourceLevel_dB | Source level |
-| 66 | float32 | pulseLength_s | Pulse duration |
-| 70 | float32 | frequency_Hz | Centre frequency |
-| 74 | uint16 | subBeamsH | Sub-beams horizontal |
-| 76 | uint16 | subBeamsV | Sub-beams vertical |
-| 78 | uint16 | _reserved | Padding to 80 bytes |
+| 48 | float32 | swathAngleDeg | Horizontal FOV of the sonar fan |
+| 52 | float32 | verticalFOVDeg | Vertical opening of the fan slice |
+| 56 | float32 | paddingDeg | Grid extends this far beyond swath/vFOV per side |
+| 60 | float32 | mountTiltDeg | Mount tilt about the sonar X axis |
+| 64 | float32 | speedOfSound | m/s |
+| 68 | float32 | sourceLevel_dB | Source level |
+| 72 | float32 | pulseLength_s | Pulse duration |
+| 76 | float32 | frequency_Hz | Centre frequency |
+| 80 | uint16 | gridWidth | Azimuth samples W (e.g. 512) |
+| 82 | uint16 | gridHeight | Elevation samples H (e.g. 128) |
+| 84 | uint32 | _reserved | Padding to 88 bytes |
 
-**Ray record (48 bytes each, repeated numberOfBeams × subBeamsPerBeam times):**
+**Range plane (W × H × float32):** Row-major, row = elevation index, column = azimuth index. Value = hit range in metres along the ray; `0.0` = no return within maxRange.
 
-| Offset | Type | Field | Description |
-|--------|------|-------|-------------|
-| 0 | uint16 | beamIndex | Parent beam [0, numberOfBeams) |
-| 2 | uint16 | subBeamIndex | Sub-beam [0, subBeamsPerBeam) |
-| 4 | uint8 | didHit | 1 = hit, 0 = miss |
-| 5 | float32 | hitDistance | Range in metres (0 if miss) |
-| 9 | float32×3 | hitNormal | Surface normal at hit |
-| 21 | float32×3 | rayDir | Normalised ray direction |
-| 33 | uint16 | objectID | Target object identifier |
-| 35 | uint8 | materialType | Enum index into material table |
-| 36 | float32×3 | hitPoint | World-space hit position |
+**Material plane (W × H × uint8):** Same ordering. Value = material type index into `materials.yaml`. Meaningless where range = 0.
+
+See `shared/PROTOCOL.md` for cell-centre angle formulas and the ray direction convention.
 
 ### 3.3 Response Payload (Python → Unity)
 
@@ -195,33 +190,35 @@ Total: 8 + (beams × rangeBins × 4) bytes.
 ```
 HOST = "127.0.0.1"
 PORT = 9000 (Python listens, Unity connects)
+FRAME_HEADER_SIZE = 88
+RESPONSE_HEADER_SIZE = 8
 ```
 
 ---
 
 ## 4. Python Acoustic Processing Pipeline
 
-The Python processor is the acoustic heart of the simulator. It transforms raw ray hit data into a realistic sonar intensity image through five processing stages.
+The Python processor is the acoustic heart of the simulator. It collapses each polar depth/material frame into a realistic sonar intensity image. All heavy stages run in PyTorch on the `DEVICE` constant — CUDA when available, CPU otherwise.
 
 ### 4.1 Module Overview
 
 | Module | Responsibility |
 |--------|---------------|
-| `main.py` | Entry point, TCP server loop, orchestrates parsing → processing → response |
+| `main.py` | Entry point, TCP server loop, orchestrates parsing → processing → response; `--dump-dir` saves the latest frame + image as `.npy` |
 | `network.py` | TCP server with length-prefixed message framing |
-| `protocol.py` | Binary serialisation/deserialisation, numpy structured array parsing |
-| `processing.py` | Sonar equation, range binning, shadows, normalisation, noise |
+| `protocol.py` | Binary serialisation/deserialisation (`parse_frame`, `build_frame`, `build_response`) |
+| `processing.py` | `process_frame`: points → normals → sonar equation → binning → shadows → normalisation → noise |
 | `materials.py` | YAML config loader, material property lookup arrays |
 
 ### 4.2 Protocol Parsing (protocol.py)
 
-`parse_ping_header()` extracts the 80-byte header into a `PingHeader` dataclass using `struct.unpack_from`. `parse_rays_bulk()` parses all ray records in one call using a numpy structured dtype — this gives zero-copy, vectorised access to all 11,520 rays without Python-level loops. Fields are accessed as `rays["hit_distance"]`, `rays["beam_index"]`, etc.
+`parse_frame()` extracts the 88-byte header into a `FrameHeader` dataclass and returns the range and material planes as zero-copy numpy views reshaped to (H, W). `build_frame()` mirrors the Unity-side serialisation for tests and offline tools.
 
 `build_response()` packs the ping ID and image dimensions into an 8-byte header, appends the float32 image bytes.
 
 ### 4.3 Material Properties (materials.py)
 
-Loaded from `config/norbit_wbms.yaml` on startup. Each material type defines:
+Loaded from `config/materials.yaml` on startup. Each material type defines:
 
 | Material | Index | Reflectivity | Scattering | Absorption (dB/m) |
 |----------|-------|-------------|------------|-------------------|
@@ -244,45 +241,47 @@ The YAML file also defines noise parameters: `receiver_noise_floor_db`, `volume_
 
 ### 4.4 Processing Pipeline (processing.py)
 
-Entry point: `process_ping(header, rays, materials) → float32 array (256×650)`.
+Entry point: `process_frame(header, ranges, material_ids, materials) → float32 array (256×650)`.
 
-#### Stage 1: Beam Pattern Weights
+Grid geometry that depends only on the header — ray directions, column → beam mapping, beam-pattern weights — is cached across pings in `_FrameGeometry`.
 
-A 2D Gaussian beam pattern is computed for the sub-beam grid (5×9). Each sub-beam receives a weight based on its distance from the beam centre using `exp(-(h² + v²) / (2σ²))` with σ=0.5. Weights are normalised to sum to 1.0 per beam, ensuring consistent total energy regardless of grid resolution.
+#### Stage 1: Point Reconstruction
 
-Centre sub-beams contribute most strongly; edge sub-beams taper off, modelling the real beam pattern of a multibeam sonar element.
+Each grid cell's 3D point in the sonar frame is `range × dir(az, el)`, where the direction grid replicates the Unity rotation chain analytically: `dir = (cos t·sin az, −cos t·cos az, −sin t)` with `t = el + mountTilt`.
 
-#### Stage 2: Sonar Equation
+#### Stage 2: Surface Normals
 
-For each ray that hit a target, the sonar equation computes echo level in dB:
+Normals come from central differences of the point grid along azimuth and elevation (`cross(dP/daz, dP/del)`), with edge replication at grid borders. A normal is only *reliable* where the cell and its four neighbours all have returns; at silhouette edges and isolated pixels the incidence is assumed head-on (1.0). Incidence is `|dot(dir, normal)|`, clipped to [1e-6, 1.0].
+
+#### Stage 3: Sonar Equation
+
+For each cell with a return, echo level in dB (unchanged from the ray pipeline):
 
 ```
 EL = SL − 2×TL + TS
 ```
 
-Where:
-
 - **SL** (Source Level) = 220 dB — transmitted acoustic power
 - **TL** (Transmission Loss) = 20·log₁₀(range) + α·range — spherical spreading plus material absorption, applied twice (two-way path)
-- **TS** (Target Strength) = 10·log₁₀(reflectivity × cos(θ) + scattering) — where θ is the grazing angle between ray direction and surface normal. Steep incidence produces stronger returns.
+- **TS** (Target Strength) = 10·log₁₀(reflectivity × incidence + scattering) — steep incidence produces stronger returns
 
-The grazing angle is computed as `|dot(rayDir, hitNormal)|`, clipped to [1e-6, 1.0].
+The dB result is converted to linear intensity: `10^(EL/10)`.
 
-The dB result is converted to linear intensity: `10^(EL/10)`, then multiplied by the beam pattern weight for that sub-beam.
+#### Stage 4: Beam Pattern Weighting
 
-All operations are fully vectorised across 11,520 rays using numpy — no Python loops.
+Each cell is weighted by a 2D Gaussian in normalised beam coordinates (σ = 0.5): elevation normalised to the vertical FOV half-angle, azimuth normalised to the cell's position within its beam. Same shape as the legacy sub-beam weighting; padding rows/columns are attenuated naturally.
 
-#### Stage 3: Range Binning with Gaussian Spread
+#### Stage 5: Max-Binning with Gaussian Range Spread
 
-Each hit is mapped to a range bin: `bin = int(distance / bin_width)`. To model the finite pulse length and create realistic target extent, each hit is spread across ±8 neighbouring bins using a Gaussian envelope: `weight = exp(-0.5 × offset²)`.
+Each cell maps to `(beam, bin)`: beam by azimuth value (padding columns are excluded), bin by `int(range / bin_width)`. To model finite pulse length, each return is spread across ±8 neighbouring bins with envelope `exp(-0.5 × offset²)`.
 
-Bin accumulation uses `np.maximum.at` (not `np.add.at`). This matches the legacy renderer's `Mathf.Max` approach and prevents stripe artifacts from overlapping pulse envelopes. Maximum blending produces clean, solid target returns.
+Accumulation uses `scatter_reduce(amax)` — the torch equivalent of the previous `np.maximum.at`. Maximum blending prevents stripe artifacts from overlapping pulse envelopes.
 
-#### Stage 4: Acoustic Shadows
+#### Stage 6: Acoustic Shadows
 
-For each beam, the minimum hit bin across all sub-beams is found using `np.minimum.at`. Everything beyond `first_hit_bin + 12` bins is zeroed. This models the physics that acoustic energy cannot penetrate past a solid target — the region behind a pillar is dark. The 12-bin offset accounts for pulse envelope spread around the hit point.
+Everything beyond `first_return_bin + 12` per beam is zeroed — identical to the legacy pipeline. Occlusion within the frame is already physical (the depth map only contains first surfaces); this stage additionally darkens the region behind the first return.
 
-#### Stage 5: dB Normalisation with Fixed Dynamic Range
+#### Stage 7: dB Normalisation with Fixed Dynamic Range
 
 The raw intensity image spans an enormous dynamic range (potentially 10¹⁷). To map to displayable 0–1:
 
@@ -297,7 +296,7 @@ normalised = (image_dB - floor_dB) / 60
 
 ### 4.5 Noise Model
 
-Noise is added after dB normalisation, in 0–1 space. Noise is applied only to the **active region** (before the acoustic shadow per beam), keeping shadow zones nearly black.
+Noise is added after dB normalisation, in 0–1 space (same components as the legacy pipeline, now generated in torch on the processing device). Noise is applied only to the **active region** (before the acoustic shadow per beam), keeping shadow zones nearly black.
 
 **Active region noise:**
 
@@ -317,9 +316,9 @@ Noise is added after dB normalisation, in 0–1 space. Noise is applied only to 
 
 Edited in the Unity Inspector. Controls beam geometry, range, timing, and acoustic transmission parameters. Changes take effect on next Play.
 
-### 5.2 Python Side (norbit_wbms.yaml)
+### 5.2 Python Side (materials.yaml)
 
-Edited in any text editor at `processor/config/norbit_wbms.yaml`. Controls material acoustic properties (reflectivity, scattering, absorption per material type) and noise model parameters. Reloaded by restarting the Python processor — no Unity restart needed.
+Edited in any text editor at `processor/config/materials.yaml`. Controls material acoustic properties (reflectivity, scattering, absorption per material type) and noise model parameters. Reloaded by restarting the Python processor — no Unity restart needed.
 
 ### 5.3 Consistency Requirements
 
@@ -332,7 +331,7 @@ The `materialType` enum values must match between `AcousticProperties` component
 ```
 sonar-simulator/
 ├── ARCHITECTURE.md              # High-level architecture overview
-├── environment.yaml             # Conda environment (Python 3.11, numpy, pyyaml, opencv)
+├── environment.yaml             # Conda environment (Python 3.11, numpy, pyyaml, opencv, pytorch)
 │
 ├── shared/
 │   └── protocol.md              # Byte-level TCP packet format specification
@@ -342,10 +341,10 @@ sonar-simulator/
 │   │   ├── Core/
 │   │   │   ├── SonarConfig.cs        # ScriptableObject — all sonar parameters
 │   │   │   ├── AcousticProperties.cs # MonoBehaviour — per-object material type
-│   │   │   ├── RayHitData.cs         # Data structs (RayHitData, PingData)
+│   │   │   ├── SonarFrame.cs         # DepthFrame struct (range + material planes)
 │   │   │   └── SonarBridge.cs        # Orchestrator wiring Network → Display
 │   │   ├── Raycasting/
-│   │   │   └── SonarRaycaster.cs     # Beam pattern + batch RaycastCommand
+│   │   │   └── SonarRaycaster.cs     # Polar grid capture via batch RaycastCommand
 │   │   ├── Network/
 │   │   │   └── SonarNetworkClient.cs # TCP client (send + receive on one connection)
 │   │   ├── Display/
@@ -361,19 +360,20 @@ sonar-simulator/
 │
 ├── processor/
 │   ├── config/
-│   │   └── norbit_wbms.yaml     # Material properties + noise parameters
+│   │   └── materials.yaml     # Material properties + noise parameters
 │   ├── src/
 │   │   ├── __init__.py
 │   │   ├── main.py              # Entry point: python -m processor.src.main
 │   │   ├── network.py           # TCP server, length-prefixed messages
-│   │   ├── protocol.py          # Binary parse/build, numpy structured arrays
-│   │   ├── processing.py        # Sonar equation → binning → shadows → noise
+│   │   ├── protocol.py          # Binary parse/build (frame header + planes)
+│   │   ├── processing.py        # Torch frame collapse: points → normals → image
 │   │   └── materials.py         # YAML loader, vectorised lookup arrays
 │   └── tests/
-│       ├── generate_fixture.py  # Synthetic ping generator
-│       ├── test_pipeline.py     # Offline end-to-end test
+│       ├── generate_fixture.py  # Synthetic depth frame (seabed + steel pile)
+│       ├── test_pipeline.py     # Offline end-to-end processing test
+│       ├── test_tcp_roundtrip.py# Full TCP round-trip test (plays Unity's role)
 │       └── fixtures/
-│           └── test_ping.bin    # Generated test data
+│           └── test_frame.bin   # Generated test data (optional)
 │
 └── tools/                       # (planned)
     ├── record_ping.py           # Record live pings to .bin files
@@ -387,15 +387,15 @@ sonar-simulator/
 
 | Metric | Value |
 |--------|-------|
-| Rays per ping | 11,520 (256 × 45) |
-| Ping payload (Unity → Python) | 553 KB |
+| Capture grid | 512 × 128 = 65,536 rays per ping |
+| Frame payload (Unity → Python) | ~330 KB |
 | Response payload (Python → Unity) | 665 KB |
-| Python processing time | 3–9 ms per ping |
+| Python processing time | 60–80 ms per ping (torch on CPU, measured offline) |
 | Target ping rate | 15 Hz (66 ms budget) |
 | Packet loss (TCP) | 0% |
 | Output image | 256 × 650, float32, normalised 0–1 |
 
-The system runs well within the 66 ms per-ping budget. Python processing under 10 ms leaves ample headroom for Unity raycasting, rendering, and TCP round-trip.
+CPU torch processing sits at the edge of the 66 ms budget; CUDA is expected to be substantially faster but has not been benchmarked yet. Throughput is currently not a priority — the pipeline targets dataset generation, not real-time display. Lower `pingRateHz` if the display lags.
 
 ---
 
@@ -408,14 +408,17 @@ conda env create -f environment.yaml
 conda activate sonar-sim
 ```
 
+The processor requires PyTorch (in `environment.yaml`). For a CUDA build on conda-forge, install e.g. `pytorch=*=*cuda12*`; the processor logs the device it selected on startup.
+
 ### 8.2 Offline Testing (No Unity Required)
 
 ```bash
 cd sonar-simulator
-python3 -m processor.tests.test_pipeline
+python3 -m processor.tests.test_pipeline       # processing on a synthetic frame
+python3 -m processor.tests.test_tcp_roundtrip  # full TCP round-trip, plays Unity's role
 ```
 
-Validates parsing, sonar equation, range binning, shadows, and noise on synthetic data.
+Validates parsing, geometry reconstruction, sonar equation, binning, shadows, and noise on synthetic data.
 
 ### 8.3 Full Pipeline
 
@@ -430,6 +433,9 @@ Stop Play mode first; Python detects disconnect and waits for reconnection.
 ---
 
 ## 9. Key Design Decisions
+
+### Polar Ray Grid over Camera Render
+The depth map is captured with a regular azimuth × elevation ray grid rather than a rendered depth camera. A perspective camera cannot cover the 150° swath in one frustum, and a URP material-ID pass would need override-material renderer-feature machinery; the ray grid gives uniform angular sampling, maps columns directly to beams, and keeps Unity code minimal. The GPU workload lives in the Python torch collapse instead.
 
 ### TCP over UDP
 Initial UDP implementation used chunked datagrams (60 KB each, 10 chunks per ping). OS socket buffers (~416 KB) consistently overflowed, losing 3/10 chunks. TCP eliminated packet loss entirely with simpler code (no chunking, no reassembly, no stale ping GC).
@@ -454,14 +460,14 @@ Original CPU and GPU emitters kept in `__Legacy/` as compilable reference. They 
 ## 10. Adding a New Processing Stage
 
 1. Add function in `processor/src/processing.py`
-2. Call it from `process_ping()` at the appropriate point in the pipeline
-3. If it needs configuration, add parameters to `norbit_wbms.yaml` and load them in `materials.py`
+2. Call it from `process_frame()` at the appropriate point in the pipeline
+3. If it needs configuration, add parameters to `materials.yaml` and load them in `materials.py`
 4. Test offline: `python3 -m processor.tests.test_pipeline`
 5. Update this document
 
 ## 11. Adding a New Material Type
 
 1. Add enum value to `AcousticProperties.materialType` in Unity
-2. Add corresponding entry in `processor/config/norbit_wbms.yaml` with matching index
+2. Add corresponding entry in `processor/config/materials.yaml` with matching index
 3. Assign the material type to scene objects via the AcousticProperties component
 4. Python picks it up automatically on next restart

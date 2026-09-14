@@ -12,7 +12,7 @@ import socket
 import struct
 from typing import Optional
 
-from .protocol import HOST, UNITY_TO_PYTHON_PORT
+from .protocol import HOST, PORT
 
 logger = logging.getLogger(__name__)
 
@@ -37,7 +37,7 @@ def _recv_exact(sock: socket.socket, n: int) -> Optional[bytes]:
 class SonarTCPServer:
     """TCP server that receives pings and sends back intensity images."""
 
-    def __init__(self, listen_port: int = UNITY_TO_PYTHON_PORT):
+    def __init__(self, listen_port: int = PORT):
         self.listen_port = listen_port
         self._server: Optional[socket.socket] = None
         self._conn: Optional[socket.socket] = None

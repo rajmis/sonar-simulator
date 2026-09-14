@@ -13,6 +13,11 @@ public class SonarConfig : ScriptableObject
     public int subBeamsV = 9;     // vertical samples within vFOV
                                   // Total sub-beams per beam = subBeamsH * subBeamsV
 
+    [Header("Depth-Map Capture")]
+    public int azimuthSamples = 512;      // grid columns across swath + padding
+    public int elevationSamples = 128;    // grid rows across vFOV + padding
+    public float capturePaddingDeg = 2f;  // extra margin per side, used by Python for normals
+
     [Header("Range Configuration")]
     public float maxRange = 100f;
     public int numberOfRangeBins = 650;

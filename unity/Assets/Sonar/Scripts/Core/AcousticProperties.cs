@@ -8,6 +8,17 @@ public class AcousticProperties : MonoBehaviour
     [Range(0f, 1f)]
     public float scatteringCoefficient = 0.2f;
     
-    public enum MaterialType { Steel, Concrete, Wood, Sand, Mud, Rock }
+    // Indices must match processor/config/materials.yaml
+    public enum MaterialType
+    {
+        Default = 0,
+        Steel = 1,
+        Concrete = 2,
+        Sand = 3,
+        Mud = 4,
+        Rock = 5,
+        Wood = 6,
+        Rubber = 7,
+    }
     public MaterialType materialType = MaterialType.Concrete;
 }

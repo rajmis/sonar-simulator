@@ -7,4 +7,5 @@ dependencies:
   - numpy
   - pyyaml
   - opencv  # cv2 — for future visualisation tools
+  - pytorch>=2.2  # GPU frame collapse; for CUDA builds use e.g. `pytorch=*=*cuda12*`
   - pip
