@@ -62,25 +62,34 @@ def test_pipeline():
     b0 = max(int(pile_ranges.min() / bin_width) - 2, 0)
     b1 = min(int(pile_ranges.max() / bin_width) + 3, nr)
 
-    # The pile is a narrow bright return per beam — compare per-beam maxima
-    # against the mirrored (pile-free) side of the swath at the same ranges.
+    # The pile should be the brightest thing in the image (steel, head-on)
     pile_max = image[pile_beams, b0:b1].max(axis=1)
-    mirror_max = image[nb - 1 - pile_beams, b0:b1].max(axis=1)
     print(f"Pile beams {pile_beams.min()}–{pile_beams.max()}, bins {b0}–{b1}: "
-          f"per-beam max median {np.median(pile_max):.3f} "
-          f"vs mirror {np.median(mirror_max):.3f}")
-    assert np.median(pile_max) > 0.7, "Pile returns should be bright"
-    assert np.median(pile_max) > 2 * np.median(mirror_max), \
-        "Pile beams should be clearly brighter than the mirrored empty region"
+          f"per-beam max median {np.median(pile_max):.3f}")
+    assert np.median(pile_max) > 0.8, "Pile returns should be bright"
 
-    # Acoustic shadow behind the pile: the seabed behind it is occluded and
-    # the shadow zone carries only faint noise.
-    mid_beam = int(np.median(pile_beams))
-    pile_bin = int(image[mid_beam].argmax())
-    shadow = image[mid_beam, pile_bin + 20:]
-    print(f"Shadow behind pile (beam {mid_beam}, bins >{pile_bin + 20}): "
-          f"mean {shadow.mean():.4f}")
-    assert shadow.mean() < 0.05, "Expected near-silence behind the pile"
+    # Geometric shadow: the seabed behind the pile is occluded in the depth
+    # map, so pile beams are dark beyond the pile, while the mirrored
+    # (pile-free) bearing shows seabed backscatter at those same ranges.
+    sw0, sw1 = b1 + 5, min(b1 + 40, nr)
+    shadow_mean = image[pile_beams, sw0:sw1].mean()
+    open_mean = image[nb - 1 - pile_beams, sw0:sw1].mean()
+    print(f"Bins {sw0}–{sw1}: shadow behind pile {shadow_mean:.3f} "
+          f"vs open seabed {open_mean:.3f}")
+    assert open_mean > shadow_mean + 0.2, \
+        "Expected occlusion shadow behind the pile vs open seabed"
+
+    # Water column before the first return: only volume scatter + noise
+    water = image[:, :30].mean()
+    print(f"Water column (bins <30) mean: {water:.3f}")
+    assert water < 0.3, "Water column should be mostly dark"
+
+    # Dry transducer (in-water flag cleared): noise floor only, no returns
+    import dataclasses
+    dry_header = dataclasses.replace(header, flags=0)
+    dry = process_frame(dry_header, ranges, material_ids, materials)
+    print(f"Dry-transducer image max: {dry.max():.3f}")
+    assert dry.max() < 0.5, "Dry transducer should produce noise only"
 
     print("All checks passed!")
 

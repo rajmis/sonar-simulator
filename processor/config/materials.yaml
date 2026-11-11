@@ -51,6 +51,13 @@ materials:
     scattering_coefficient: 0.02
     absorption_db_per_m: 0.01
 
+  8:  # Water surface (air-water interface seen from below — near-perfect mirror.
+      # Direct return only; multipath mirror ghosts are not modelled.)
+    name: "water_surface"
+    reflectivity: 0.95
+    scattering_coefficient: 0.05
+    absorption_db_per_m: 0.0
+
 # Noise parameters
 noise:
   receiver_noise_floor_db: -80.0

@@ -17,12 +17,17 @@ MonoBehaviour:
   verticalFOVDeg: 25
   subBeamsH: 5
   subBeamsV: 9
-  maxRange: 100
+  azimuthSamples: 512
+  elevationSamples: 128
+  capturePaddingDeg: 2
+  maxRange: 30
   numberOfRangeBins: 650
   pingRateHz: 15
   beamWidthAlongTrackDeg: 1.5
   mountTiltDeg: 0
   mountRollDeg: 0
+  useWaterLevel: 0
+  waterLevelY: 0
   speedOfSound: 1500
   sourceLevel_dB: 220
   pulseLength_s: 0.0001

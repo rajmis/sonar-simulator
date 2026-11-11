@@ -172,7 +172,10 @@ namespace Sonar.Network
             WriteFloat32(_sendBuffer, ref offset, config.frequency_Hz);
             WriteUInt16(_sendBuffer, ref offset, (ushort)frame.width);
             WriteUInt16(_sendBuffer, ref offset, (ushort)frame.height);
-            WriteUInt32(_sendBuffer, ref offset, 0); // reserved
+
+            // Flags: bit 0 = sonar submerged (Python returns noise only when dry)
+            bool inWater = !config.useWaterLevel || frame.sonarPos.y < config.waterLevelY;
+            WriteUInt32(_sendBuffer, ref offset, inWater ? 1u : 0u);
 
             // --- Range plane (float32 × cells) ---
             // Bulk copy: all Unity target platforms are little-endian.

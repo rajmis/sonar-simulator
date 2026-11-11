@@ -20,7 +20,8 @@ Unity (depth-map capture)  ──TCP──▶  Python (acoustic collapse, GPU)  
 4. **Python SonarTCPServer** reads the complete frame
 5. **Python process_frame** (PyTorch, CUDA when available) runs:
    point reconstruction → normals from depth gradients → sonar equation →
-   beam/range binning → shadows → dB normalisation → noise
+   beam/range binning → dB normalisation → noise (shadows are geometric:
+   occluded surfaces are absent from the depth map)
 6. **Python** returns length-prefixed float32 intensity image (256×650,
    normalised 0–1) over the same TCP connection
 7. **Unity SonarNetworkClient** receives on background thread, queues to main thread

@@ -32,6 +32,11 @@ public class SonarConfig : ScriptableObject
     public float mountTiltDeg = 0f;
     public float mountRollDeg = 0f;
 
+    [Header("Water")]
+    [Tooltip("When enabled, pings sent while the sonar is above waterLevelY are flagged dry and Python returns a noise-only image")]
+    public bool useWaterLevel = false;
+    public float waterLevelY = 0f;   // world-space Y of the water surface
+
     [Header("Acoustics (used by Python processor)")]
     public float speedOfSound = 1500f;
     public float sourceLevel_dB = 220f;

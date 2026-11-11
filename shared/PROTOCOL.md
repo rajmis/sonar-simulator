@@ -46,7 +46,7 @@ TCP guarantees ordered, reliable delivery. No chunking or reassembly needed.
 | 76     | float32   | frequency_Hz     | Centre frequency                                 |
 | 80     | uint16    | gridWidth        | Azimuth samples W (e.g. 512)                     |
 | 82     | uint16    | gridHeight       | Elevation samples H (e.g. 128)                   |
-| 84     | uint32    | _reserved        | Padding to 88 bytes                              |
+| 84     | uint32    | flags            | Bit 0: sonar submerged (1 = in water). When 0, Python ignores all returns and sends a noise-floor-only image. Other bits reserved. |
 
 ### Range Plane (W × H × float32)
 

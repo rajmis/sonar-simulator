@@ -19,6 +19,9 @@ PORT = 9000
 FRAME_HEADER_SIZE = 88
 RESPONSE_HEADER_SIZE = 8
 
+# Header flags (uint32 at offset 84)
+FLAG_IN_WATER = 0x1  # transducer is submerged; if clear, Python returns noise only
+
 
 @dataclass
 class FrameHeader:
@@ -39,6 +42,11 @@ class FrameHeader:
     frequency_hz: float
     grid_width: int   # azimuth samples W
     grid_height: int  # elevation samples H
+    flags: int = FLAG_IN_WATER
+
+    @property
+    def in_water(self) -> bool:
+        return bool(self.flags & FLAG_IN_WATER)
 
 
 def parse_frame_header(data: bytes) -> FrameHeader:
@@ -52,7 +60,7 @@ def parse_frame_header(data: bytes) -> FrameHeader:
     (max_range, swath, vfov, padding, tilt,
      speed, src_lvl, pulse_len, freq) = struct.unpack_from("<9f", data, off); off += 36
     grid_w, grid_h = struct.unpack_from("<HH", data, off); off += 4
-    # 4 bytes reserved
+    flags = struct.unpack_from("<I", data, off)[0]; off += 4
     return FrameHeader(
         ping_id=ping_id, timestamp=timestamp,
         sonar_pos=pos, sonar_rot=rot,
@@ -62,6 +70,7 @@ def parse_frame_header(data: bytes) -> FrameHeader:
         mount_tilt_deg=tilt, speed_of_sound=speed,
         source_level_db=src_lvl, pulse_length_s=pulse_len,
         frequency_hz=freq, grid_width=grid_w, grid_height=grid_h,
+        flags=flags,
     )
 
 
@@ -96,7 +105,7 @@ def build_frame(header: FrameHeader, ranges: np.ndarray,
         header.max_range, header.swath_angle_deg, header.vertical_fov_deg,
         header.padding_deg, header.mount_tilt_deg, header.speed_of_sound,
         header.source_level_db, header.pulse_length_s, header.frequency_hz,
-        header.grid_width, header.grid_height, 0,
+        header.grid_width, header.grid_height, header.flags,
     )
     assert len(hdr) == FRAME_HEADER_SIZE
     return (hdr

@@ -17,7 +17,7 @@ Unity SonarNetworkClient (serialise ~330 KB depth + material frame, TCP send)
 Python SonarTCPServer (parse header + range/material planes)
         │
         ▼
-Python process_frame (points → normals → sonar equation → binning → shadows → dB normalisation → noise)
+Python process_frame (points → normals → sonar equation → binning → dB normalisation → noise; shadows are geometric)
         │
         ▼
 Python SonarTCPServer (send 665 KB float32 image)
@@ -84,7 +84,7 @@ Captures a polar depth + material map of the sonar's field of view. Rays are cas
 
 ### 2.3 AcousticProperties (MonoBehaviour)
 
-Attached to scene objects (JettyPile, Seabed, etc.) on the `SonarTarget` physics layer. Contains a `materialType` enum with explicit indices matching `materials.yaml`: Default = 0, Steel = 1, Concrete = 2, Sand = 3, Mud = 4, Rock = 5, Wood = 6, Rubber = 7. The raycaster reads this via `GetComponentInParent<AcousticProperties>()` on hit colliders (cached per collider).
+Attached to scene objects (JettyPile, Seabed, etc.) on the `SonarTarget` physics layer. Contains a `materialType` enum with explicit indices matching `materials.yaml`: Default = 0, Steel = 1, Concrete = 2, Sand = 3, Mud = 4, Rock = 5, Wood = 6, Rubber = 7, WaterSurface = 8. The raycaster reads this via `GetComponentInParent<AcousticProperties>()` on hit colliders (cached per collider).
 
 ### 2.4 SonarNetworkClient (TCP)
 
@@ -166,7 +166,7 @@ Total: 88 + (W·H × 4) + (W·H × 1) bytes.
 | 76 | float32 | frequency_Hz | Centre frequency |
 | 80 | uint16 | gridWidth | Azimuth samples W (e.g. 512) |
 | 82 | uint16 | gridHeight | Elevation samples H (e.g. 128) |
-| 84 | uint32 | _reserved | Padding to 88 bytes |
+| 84 | uint32 | flags | Bit 0: sonar submerged (1 = in water); when 0, Python returns a noise-floor-only image. Unity sets it from `SonarConfig.useWaterLevel` / `waterLevelY`. |
 
 **Range plane (W × H × float32):** Row-major, row = elevation index, column = azimuth index. Value = hit range in metres along the ray; `0.0` = no return within maxRange.
 
@@ -207,7 +207,7 @@ The Python processor is the acoustic heart of the simulator. It collapses each p
 | `main.py` | Entry point, TCP server loop, orchestrates parsing → processing → response; `--dump-dir` saves the latest frame + image as `.npy` |
 | `network.py` | TCP server with length-prefixed message framing |
 | `protocol.py` | Binary serialisation/deserialisation (`parse_frame`, `build_frame`, `build_response`) |
-| `processing.py` | `process_frame`: points → normals → sonar equation → binning → shadows → normalisation → noise |
+| `processing.py` | `process_frame`: points → normals → sonar equation → binning → normalisation → noise |
 | `materials.py` | YAML config loader, material property lookup arrays |
 
 ### 4.2 Protocol Parsing (protocol.py)
@@ -230,6 +230,7 @@ Loaded from `config/materials.yaml` on startup. Each material type defines:
 | Rock | 5 | 0.60 | 0.30 | 0.000 |
 | Wood | 6 | 0.40 | 0.20 | 0.005 |
 | Rubber | 7 | 0.05 | 0.02 | 0.010 |
+| Water surface | 8 | 0.95 | 0.05 | 0.000 |
 
 - **Reflectivity** (0–1): fraction of incident energy reflected specularly. Steel is highly reflective (0.95); sand is weakly reflective (0.20).
 - **Scattering coefficient** (0–1): fraction of incident energy scattered diffusely. Higher for rough surfaces (sand 0.35, concrete 0.25).
@@ -271,17 +272,17 @@ The dB result is converted to linear intensity: `10^(EL/10)`.
 
 Each cell is weighted by a 2D Gaussian in normalised beam coordinates (σ = 0.5): elevation normalised to the vertical FOV half-angle, azimuth normalised to the cell's position within its beam. Same shape as the legacy sub-beam weighting; padding rows/columns are attenuated naturally.
 
-#### Stage 5: Max-Binning with Gaussian Range Spread
+#### Stage 5: Max-Binning with Footprint-Aware Splatting
 
-Each cell maps to `(beam, bin)`: beam by azimuth value (padding columns are excluded), bin by `int(range / bin_width)`. To model finite pulse length, each return is spread across ±8 neighbouring bins with envelope `exp(-0.5 × offset²)`.
+Each cell maps to `(beam, bin)`: beam by azimuth value (padding columns are excluded), bin by `int(range / bin_width)`. A grid pixel covers a surface patch whose range extent grows with grazing angle — on a flat seabed one elevation row can span many range bins. Each return is therefore splatted flat across its own footprint (half-extent from one-sided range differences to its neighbours, capped at 32 bins) with a Gaussian pulse tail (σ = 1 bin) beyond. One-sided differences keep footprints from bridging depth discontinuities, so silhouettes and shadows stay crisp. If the far field still shows range banding, raise `elevationSamples`.
 
-Accumulation uses `scatter_reduce(amax)` — the torch equivalent of the previous `np.maximum.at`. Maximum blending prevents stripe artifacts from overlapping pulse envelopes.
+Accumulation uses `scatter_reduce(amax)` — the torch equivalent of the previous `np.maximum.at`. Maximum blending prevents stripe artifacts from overlapping envelopes.
 
-#### Stage 6: Acoustic Shadows
+#### Acoustic Shadows (not a stage)
 
-Everything beyond `first_return_bin + 12` per beam is zeroed — identical to the legacy pipeline. Occlusion within the frame is already physical (the depth map only contains first surfaces); this stage additionally darkens the region behind the first return.
+There is no explicit shadow pass. The depth map only contains the first surface along each ray, so anything occluded — the seabed behind a pile, the far side of objects — contributes no returns and comes out dark naturally. (The legacy pipeline zeroed everything beyond `first_return + 12` bins per beam; with depth-map input that rule is redundant for true shadows and wrong for forward-looking geometries, where it would erase targets beyond the near seabed.)
 
-#### Stage 7: dB Normalisation with Fixed Dynamic Range
+#### Stage 6: dB Normalisation with Fixed Dynamic Range
 
 The raw intensity image spans an enormous dynamic range (potentially 10¹⁷). To map to displayable 0–1:
 
@@ -296,17 +297,13 @@ normalised = (image_dB - floor_dB) / 60
 
 ### 4.5 Noise Model
 
-Noise is added after dB normalisation, in 0–1 space (same components as the legacy pipeline, now generated in torch on the processing device). Noise is applied only to the **active region** (before the acoustic shadow per beam), keeping shadow zones nearly black.
+Noise is added after dB normalisation, in 0–1 space (same components as the legacy pipeline, now generated in torch on the processing device). The noise floor applies across the whole image; shadow regions stay visibly darker because they carry no signal, only floor.
 
-**Active region noise:**
-
-- **Volume scattering:** Simulates acoustic scattering by suspended particles in the water column. Applied only to bins *before* the first target hit. Amplitude 0.02–0.08, decreasing with range (clearer water at depth).
+- **Volume scattering:** Simulates acoustic scattering by suspended particles in the water column. Applied only to bins *before* the first return per beam. Amplitude 0.02–0.08, decreasing with range (clearer water at depth).
 - **Band noise:** Multiple sinusoidal interference patterns at random frequencies (3 bands). Random frequency multipliers and phases, with per-ping random offset for temporal variation. Simulates electrical and environmental noise.
 - **Receiver noise:** Uniform random noise (0.01–0.04) per pixel. Models electronic noise floor.
 - **Gaussian noise:** Additive N(0, 0.02). General system noise.
 - **Speckle:** 0.3% of pixels get a bright spike (0.08–0.2). Models constructive interference speckle characteristic of coherent sonar imaging.
-
-**Shadow zone noise:** Extremely faint (0–0.005). Models residual multipath and ambient noise. Nearly black but not perfectly zero.
 
 ---
 
@@ -418,7 +415,7 @@ python3 -m processor.tests.test_pipeline       # processing on a synthetic frame
 python3 -m processor.tests.test_tcp_roundtrip  # full TCP round-trip, plays Unity's role
 ```
 
-Validates parsing, geometry reconstruction, sonar equation, binning, shadows, and noise on synthetic data.
+Validates parsing, geometry reconstruction, sonar equation, binning, geometric shadowing, and noise on synthetic data (forward-looking seabed + pile scene).
 
 ### 8.3 Full Pipeline
 
@@ -447,10 +444,10 @@ Per-ping `image /= max_val` caused the seabed to vanish when a strong nearby pil
 `np.maximum.at` instead of `np.add.at` for range bin accumulation matches the legacy `Mathf.Max` approach. Prevents stripe artifacts from overlapping pulse envelopes.
 
 ### Noise in Normalised Space
-Noise applied after dB normalisation (in 0–1 space) ensures perceptually consistent levels regardless of target strength. Active-region-only application keeps shadow zones clean.
+Noise applied after dB normalisation (in 0–1 space) ensures perceptually consistent levels regardless of target strength.
 
-### Noise Restricted to Active Region
-Bulk noise (receiver, band, speckle) is masked to active bins only (before shadow start per beam). Shadow zones receive only trace noise (0–0.005), producing nearly black regions behind targets and below seabed.
+### Geometric Shadows over an Explicit Shadow Stage
+The legacy pipeline zeroed everything beyond the first return per beam. With depth-map input, occlusion is already encoded — shadowed regions contribute no returns — and the legacy rule would erase legitimate targets beyond the near seabed in forward-looking geometries. Shadows now emerge purely from geometry; the noise floor covers the whole image.
 
 ### Legacy Preservation
 Original CPU and GPU emitters kept in `__Legacy/` as compilable reference. They document beam geometry, noise model, and shadow logic that the hybrid architecture reimplements.

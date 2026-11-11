@@ -56,13 +56,27 @@ for normal estimation in Python, never binned into beams.
 
 - `processing.py` — rewritten around `process_frame()` in PyTorch
   (`cuda` if available, else CPU). Normals come from central differences on
-  the reconstructed point grid; the sonar equation, shadow model, 60 dB
-  window, and noise components are numerically the same as v1.
+  the reconstructed point grid; the sonar equation, 60 dB window, and noise
+  components are numerically the same as v1. Returns are splatted across
+  each pixel's range footprint (grazing-angle aware), preventing range
+  banding on flat seabeds.
 - `protocol.py` — parses frames instead of ray records; UDP-era chunking
   helpers deleted.
 - `main.py` — new `--dump-dir` flag saves the latest received frame and
   output image as `.npy` for inspection.
 - `environment.yaml` — adds `pytorch` (use a `*cuda12*` build for GPU).
+
+## Water
+
+- Header flags (offset 84, formerly reserved): bit 0 = **sonar submerged**.
+  Unity sets it from `SonarConfig.useWaterLevel` + `waterLevelY` (disabled by
+  default → always "in water"). When the flag is clear, Python skips all
+  returns and sends a noise-floor-only image.
+- The **water surface is plain geometry**: place a collider at the waterline
+  tagged `AcousticProperties → WaterSurface` (material 8, near-perfect
+  reflector). Unity raycasts only hit front faces, so the surface must face
+  *down* (or use a thin box collider). Direct surface returns only —
+  multipath mirror ghosts are not modelled (first-return pipeline).
 
 ## Testing
 
@@ -77,6 +91,11 @@ and a shadow wedge behind it.
 
 ## Deliberate deviations from v1
 
+- **The explicit shadow stage is gone.** v1 zeroed everything beyond the
+  first return per beam. With depth-map input occlusion is geometric —
+  shadowed surfaces simply aren't in the frame — and the v1 rule would
+  erase targets beyond the near seabed in forward-looking geometries.
+  The noise floor now covers the whole image.
 - Normals are estimated from the depth grid, not taken from `RaycastHit`
   — silhouette-edge pixels assume head-on incidence.
 - Grid sampling replaces beam/sub-beam sampling: 512 columns over 150°

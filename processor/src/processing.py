@@ -8,10 +8,13 @@ Processing stages:
 3. Per-pixel sonar equation using material properties
 4. Beam-pattern weighting (Gaussian across elevation and within-beam azimuth)
 5. Max-bin into (beam, range bin) with Gaussian range spread
-6. Acoustic shadows (zero beyond first return per beam, as in the legacy
-   ray pipeline)
-7. dB conversion with fixed dynamic range → 0–1
-8. Noise model (identical components to the legacy ray pipeline)
+6. dB conversion with fixed dynamic range → 0–1
+7. Noise model (noise floor everywhere, volume scattering before the
+   first return per beam)
+
+Acoustic shadows are not an explicit stage: the depth map only contains
+the first surface along each ray, so occluded regions simply contribute
+no returns and come out dark.
 """
 
 import math
@@ -24,9 +27,8 @@ from .materials import MaterialTable
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-# Legacy-pipeline constants, kept identical for output parity
-_RANGE_SPREAD_BINS = 8      # Gaussian spread of a return across range bins
-_SHADOW_OFFSET_BINS = 12    # shadow starts this many bins after first return
+_MAX_FOOTPRINT_BINS = 32    # cap on a pixel's half-extent across range bins
+_MAX_SPLAT_BINS = 36        # footprint cap + Gaussian pulse tail
 _DYNAMIC_RANGE_DB = 60.0    # display window in dB
 _BEAM_PATTERN_SIGMA = 0.5   # Gaussian sigma in normalised beam coordinates
 
@@ -135,6 +137,9 @@ def process_frame(header: FrameHeader, ranges: np.ndarray,
     r = torch.from_numpy(ranges.copy()).to(DEVICE)                         # (H, W)
     mat = torch.from_numpy(material_ids.astype(np.int64)).to(DEVICE)       # (H, W)
     hit = r > 0
+    if not header.in_water:
+        # Dry transducer: no acoustic returns, only the noise floor
+        hit = torch.zeros_like(hit)
 
     # --- Geometry: points, normals, incidence ---
     points = r.unsqueeze(-1) * geom.dirs
@@ -158,7 +163,23 @@ def process_frame(header: FrameHeader, ranges: np.ndarray,
     el_db = sl_db - 2.0 * tl_db + ts_db
     intensity = torch.pow(10.0, el_db / 10.0) * geom.weight
 
-    # --- Max-bin into (beam, range bin) with Gaussian range spread ---
+    # --- Max-bin into (beam, range bin) with footprint-aware splatting ---
+    # A grid pixel covers a patch of surface spanning a range extent that
+    # grows with grazing angle (one elevation row can cross many range bins
+    # on a flat seabed). Splat each return across its own footprint, plus a
+    # Gaussian pulse tail. One-sided differences keep footprints from
+    # bridging depth discontinuities (silhouettes, shadows).
+    def _local_step(x, h, dim, step):
+        d = (_shift(x, dim, step) - x).abs()
+        return torch.where(_shift(h, dim, step), d, torch.full_like(d, torch.inf))
+
+    d_el = torch.minimum(_local_step(r, hit, 0, 1), _local_step(r, hit, 0, -1))
+    d_az = torch.minimum(_local_step(r, hit, 1, 1), _local_step(r, hit, 1, -1))
+    half_extent = 0.5 * torch.maximum(d_el, d_az)
+    half_extent = torch.where(torch.isfinite(half_extent), half_extent,
+                              torch.zeros_like(half_extent))
+    extent_bins = (half_extent / bin_width).clamp(max=_MAX_FOOTPRINT_BINS)
+
     sel = hit & geom.in_swath.unsqueeze(0)
     beam_grid = geom.beam.unsqueeze(0).expand_as(r)
     rbin = (r / bin_width).long().clamp(0, nr - 1)
@@ -166,23 +187,24 @@ def process_frame(header: FrameHeader, ranges: np.ndarray,
     src = intensity[sel]
     beam_sel = beam_grid[sel]
     rbin_sel = rbin[sel]
+    extent_sel = extent_bins[sel]
 
     image = torch.zeros(nb * nr, dtype=torch.float64, device=DEVICE)
-    for offset in range(-_RANGE_SPREAD_BINS, _RANGE_SPREAD_BINS + 1):
-        falloff = math.exp(-0.5 * offset * offset)
+    for offset in range(-_MAX_SPLAT_BINS, _MAX_SPLAT_BINS + 1):
+        # Flat inside the pixel footprint, Gaussian tail (σ = 1 bin) beyond
+        d = (abs(offset) - extent_sel).clamp_min(0.0)
+        falloff = torch.exp(-0.5 * d * d)
         target = (rbin_sel + offset).clamp(0, nr - 1)
         image.scatter_reduce_(0, beam_sel * nr + target,
                               (src * falloff).to(torch.float64),
                               reduce="amax", include_self=True)
     image = image.view(nb, nr)
 
-    # --- Acoustic shadows: zero beyond first return per beam ---
+    # No explicit shadow stage: occlusion is inherent in the depth map.
+    # First-return bins are still needed to place volume scattering.
     bins = torch.arange(nr, device=DEVICE)
     active = image > 0
     first_hit_bin = torch.where(active, bins.unsqueeze(0), nr).min(dim=1).values
-    shadow_start = first_hit_bin + _SHADOW_OFFSET_BINS
-    shadow_mask = bins.unsqueeze(0) >= shadow_start.unsqueeze(1)
-    image = image.masked_fill(shadow_mask, 0.0)
 
     # --- dB conversion with fixed dynamic range ---
     image_db = torch.where(image > 0,
@@ -195,7 +217,6 @@ def process_frame(header: FrameHeader, ranges: np.ndarray,
 
     # --- Noise model (same components as legacy, in 0–1 space) ---
     before_first = bins.unsqueeze(0) < first_hit_bin.unsqueeze(1)
-    active_mask = ~shadow_mask
 
     # Volume scattering before the first return, fading with range
     range_ratio = (bins.to(torch.float64) / nr).unsqueeze(0)
@@ -220,11 +241,7 @@ def process_frame(header: FrameHeader, ranges: np.ndarray,
         * (0.08 + 0.12 * torch.rand(nb, nr, device=DEVICE, dtype=torch.float64))
     noise_layer += speckle
 
-    image_norm = image_norm + noise_layer * active_mask
-
-    # Faint noise in shadow zones only
-    image_norm = image_norm + torch.rand(nb, nr, device=DEVICE, dtype=torch.float64) \
-        * 0.005 * shadow_mask
+    image_norm = image_norm + noise_layer
 
     image_norm = image_norm.clamp(0.0, 1.0)
     return image_norm.to(torch.float32).cpu().numpy()

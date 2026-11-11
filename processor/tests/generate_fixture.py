@@ -1,9 +1,13 @@
 """
 Generate synthetic depth/material frames for offline testing.
 
-Scene: flat sand seabed 8 m below the sonar, plus one vertical steel
-pile (radius 0.5 m) rising from the seabed to 2 m below the sonar,
-offset 3 m to the +azimuth side.
+Scene: forward-looking sonar 2 m above a flat sand seabed, with one
+vertical steel pile (radius 0.5 m, 6 m tall) standing on the seabed
+10 m ahead and 3 m to starboard.
+
+In the sonar's local frame the boresight is -y (the capture convention),
+azimuth fans in the x-y plane, and +z points down at the seabed — i.e.
+the head is mounted pitched so the fan is horizontal.
 
 Usage:
     python -m processor.tests.generate_fixture --output processor/tests/fixtures/test_frame.bin
@@ -17,10 +21,11 @@ import numpy as np
 from processor.src.protocol import FrameHeader, build_frame
 
 # Scene constants (also used by test assertions)
-SEABED_DEPTH = 8.0      # m below sonar
-PILE_X = 3.0            # m to the side
+SONAR_HEIGHT = 2.0      # m above the seabed
+PILE_AHEAD = 10.0       # m along the boresight
+PILE_X = 3.0            # m to starboard
 PILE_RADIUS = 0.5
-PILE_TOP = -2.0         # y of pile top (sonar at y=0, down = -y)
+PILE_HEIGHT = 6.0       # m up from the seabed
 SEABED_MATERIAL = 3     # sand
 PILE_MATERIAL = 1       # steel
 
@@ -64,19 +69,22 @@ def generate_frame(header: FrameHeader = None):
     dirs = grid_directions(header)
     dx, dy, dz = dirs[..., 0], dirs[..., 1], dirs[..., 2]
 
-    # Seabed plane at y = -SEABED_DEPTH
+    # Seabed plane at z = +SONAR_HEIGHT (below the sonar); rays above the
+    # horizon (dz <= 0) never hit it
     with np.errstate(divide="ignore"):
-        t_seabed = np.where(dy < 0, SEABED_DEPTH / -dy, np.inf)
+        t_seabed = np.where(dz > 0, SONAR_HEIGHT / dz, np.inf)
 
-    # Vertical cylinder: axis parallel to y through (PILE_X, z=0)
-    a = dx**2 + dz**2
-    b = -2.0 * PILE_X * dx
-    c = PILE_X**2 - PILE_RADIUS**2
+    # Vertical cylinder: axis parallel to z through (PILE_X, -PILE_AHEAD)
+    a = dx**2 + dy**2
+    b = 2.0 * (PILE_AHEAD * dy - PILE_X * dx)
+    c = PILE_X**2 + PILE_AHEAD**2 - PILE_RADIUS**2
     disc = b**2 - 4 * a * c
     with np.errstate(divide="ignore", invalid="ignore"):
         t_pile = np.where(disc >= 0, (-b - np.sqrt(np.maximum(disc, 0))) / (2 * a), np.inf)
-    hit_y = t_pile * dy
-    t_pile = np.where((t_pile > 0) & (hit_y <= PILE_TOP) & (hit_y >= -SEABED_DEPTH),
+    hit_z = t_pile * dz
+    t_pile = np.where((t_pile > 0)
+                      & (hit_z <= SONAR_HEIGHT)
+                      & (hit_z >= SONAR_HEIGHT - PILE_HEIGHT),
                       t_pile, np.inf)
 
     ranges = np.minimum(t_seabed, t_pile)
