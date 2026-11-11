@@ -1,6 +1,7 @@
 # Sonar Simulator TCP Protocol Specification: v3 (draft)
 
-Status: **draft for review**, 2026-11-11. Supersedes [`PROTOCOL_v2.md`](PROTOCOL_v2.md). Not wire-compatible with v2.
+Status: **draft for review**, 2026-11-11. This is the **new version (v3)**. It supersedes the **old version (v2)**,
+[`PROTOCOL_v2.md`](PROTOCOL_v2.md), and is not wire-compatible with it.
 Rationale for each change: [`docs/protocol_v3_responses.md`](../docs/protocol_v3_responses.md).
 
 ## Overview
@@ -11,21 +12,30 @@ generator runs. There is one bidirectional TCP connection. Byte order is **littl
 Unity sends a **CONFIG** and waits for a **CONFIG_ACK**. Unity then sends one **FRAME** per ping, and the
 generator replies to each with one **IMAGE**.
 
-### Changes from v2
+Each FRAME carries the **first hit** of every ray: range, material and surface normal. Multipath (later hits and
+reflections) is out of scope for this version.
 
-| # | Change | Where |
-|---|--------|-------|
-| 1 | Every message starts with the magic number `0x3BA4B839` | [Message Framing](#message-framing) |
-| 2 | CONFIG carries `protocolVersion = 3` | [CONFIG](#unity--generator-config-msgtype--1) |
-| 3 | CONFIG adds `bandwidth_Hz` | CONFIG |
-| 4 | CONFIG selects optional data planes (`planeMask`): surface normals, object IDs, one specular bounce | CONFIG, [FRAME planes](#data-planes) |
-| 5 | CONFIG selects the output image: polar or Cartesian (`imgType`, `imgWidth`, `imgHeight`) | CONFIG, [IMAGE](#generator--unity-image-msgtype--2) |
-| 6 | Pose is in **NED** with an **FRD** body frame; Euler angles follow the ZYX convention | [Coordinate Frames](#coordinate-frames) |
-| 7 | Ray geometry is forward-looking-native: elevation 0 = ahead, −90 = down; `mountTiltDeg` uses the same convention | [Ray Geometry](#ray-geometry) |
-| 8 | FRAME header adds navigation and environment fields (Table 1) | [FRAME header](#frame-header-176-bytes) |
-| 9 | Material IDs: seabed = S-57 NATSUR codes, water surface, object materials | [Material IDs](#material-ids) |
-| 10 | IMAGE echoes the full FRAME header | IMAGE |
-| 11 | IMAGE array index order is stated explicitly (beam-major, as v2 already did in practice) | IMAGE |
+### Changes from the old version (v2)
+
+| # | Item | Old version (v2) | New version (v3) |
+|---|------|------------------|------------------|
+| 1 | Message framing | `[length][payload]` | `[magic 0x3BA4B839][length][payload]` ([Message Framing](#message-framing)) |
+| 2 | Protocol version | Not sent | CONFIG carries `protocolVersion = 3`; ACK status `3` if unsupported |
+| 3 | CONFIG size | 48 bytes | 52 bytes ([CONFIG](#unity--generator-config-msgtype--1)) |
+| 4 | `paddingDeg` | CONFIG field; the grid extends past the swath and vertical FOV so the generator can estimate normals | **Removed.** The grid covers exactly the swath and vertical FOV |
+| 5 | Surface normals | Estimated by the generator from range differences | **Sent by Unity** from `RaycastHit.normal`, in every FRAME ([Data Planes](#data-planes)) |
+| 6 | `frequency_Hz` | CONFIG field | **Removed.** Centre frequency and bandwidth are fixed in the generator, as agreed at the start of the project |
+| 7 | Output image | Polar only | Polar or Cartesian, chosen in CONFIG (`imgType`, `imgWidth`, `imgHeight`) |
+| 8 | Coordinate frames | Unity world (left-handed, Y up); attitude convention unstated | World **NED**, body **FRD**, Hamilton quaternion (scalar last), ZYX Euler ([Coordinate Frames](#coordinate-frames)) |
+| 9 | Ray geometry | Zero direction straight down; azimuth rotates about the forward axis. A forward-looking fan cannot be described | Elevation 0 = ahead, −90 = down; `mountTiltDeg` uses the same convention ([Ray Geometry](#ray-geometry)) |
+| 10 | FRAME header | 48 bytes | 176 bytes: adds navigation and environment fields (Table 1) ([FRAME header](#frame-header-176-bytes)) |
+| 11 | FRAME size | `48 + 5·W·H` | `176 + 11·W·H` ([Frame size](#frame-size)) |
+| 12 | Material IDs | 0 default, 1 seabed, 2 water surface, 3–255 objects | 0 default, 1–18 seabed by S-57 NATSUR code, 32 seabed unspecified, 33 water surface, 64–67 object materials ([Material IDs](#material-ids)) |
+| 13 | IMAGE header | 12 bytes; echoes `pingID` | 192 bytes; echoes the full FRAME header and states `imgType` ([IMAGE](#generator--unity-image-msgtype--2)) |
+| 14 | IMAGE index order | "Row-major", with beams called the width | Stated explicitly: index = `j·M + i`, one beam (column) at a time. Same bytes as v2 sent in practice |
+| 15 | CONFIG_ACK status | 0 OK, 1 invalid value, 2 malformed | Adds 3 unsupported version, 4 unsupported option; status 1 checked against a [Valid values](#valid-values) table |
+| 16 | Session rules | 6 rules | Adds lock-step exchange, strict ordering, size limits, mis-sized FRAME and unknown `msgType` handling, `pingID` wrap ([Session Rules](#session-rules)) |
+| 17 | Intensity scale | "Normalised 0–1" | Defined: a 60 dB window below each image's peak ([Intensity scale](#intensity-scale)) |
 
 ---
 
@@ -77,7 +87,7 @@ Every payload begins with a `uint32 msgType`:
 9. A **session** is one TCP connection. `pingID` increases by 1 per FRAME and wraps modulo 2³². It may
    restart from any value after a reconnect. Every new connection starts with a CONFIG.
 10. Size limits: `gridWidth · gridHeight ≤ 4,194,304` and image `N · M ≤ 4,194,304`. That caps a FRAME at
-    about 96 MB and an IMAGE at about 16 MB. A CONFIG that exceeds either limit gets ACK status `1`.
+    about 46 MB and an IMAGE at about 16 MB. A CONFIG that exceeds either limit gets ACK status `1`.
 
 ---
 
@@ -126,11 +136,11 @@ Unity's own `eulerAngles` use a different order (Z, X, Y) and different signs. D
 ## Ray Geometry
 
 Grid indices map to angles in the **sonar body frame**. They do not depend on the sonar's roll, pitch or yaw.
+The grid covers exactly the swath and the vertical field of view; there is no padding.
 
 ```
-azSpan = swathAngleDeg + 2·paddingDeg        elSpan = verticalFOVDeg + 2·paddingDeg
-az(c)  = −azSpan/2 + (c + 0.5)·azSpan/W      # c = 0…W−1, positive = starboard
-el(r)  = −elSpan/2 + (r + 0.5)·elSpan/H      # r = 0…H−1, positive = up
+az(c) = −swathAngleDeg/2  + (c + 0.5)·swathAngleDeg/W     # c = 0…W−1, positive = starboard
+el(r) = −verticalFOVDeg/2 + (r + 0.5)·verticalFOVDeg/H    # r = 0…H−1, positive = up
 ```
 
 `mountTiltDeg` (τ) is the elevation of the sonar head's boresight in the body frame: `0` = ahead,
@@ -164,16 +174,11 @@ Test vectors (computed numerically):
 | −90 | 30  | 0   | (+0.0000, +0.5000, +0.8660)      | (+0.5000, −0.8660, +0.0000)        |
 | −20 | −45 | 5   | (+0.6917, −0.7044, +0.1590)      | (−0.7044, −0.1590, +0.6917)        |
 
-`paddingDeg` widens the grid only so the generator has neighbouring cells for estimating normals. When Unity
-sends the normals plane (`planeMask` bit 0), use `paddingDeg = 0`. Without that plane, the smallest padding
-that gives every edge cell one neighbour is
-`paddingDeg = max(swathAngleDeg/(W−2), verticalFOVDeg/(H−2))`.
-
 ---
 
 ## Unity → Generator: CONFIG (msgType = 1)
 
-### Payload (68 bytes)
+### Payload (52 bytes)
 
 | Offset | Type    | Field             | Description |
 |--------|---------|-------------------|-------------|
@@ -184,19 +189,18 @@ that gives every edge cell one neighbour is
 | 12     | float32 | maxRange          | Metres |
 | 16     | float32 | swathAngleDeg     | Horizontal opening of the fan. Must be ≤ 180 when `imgType = 1` |
 | 20     | float32 | verticalFOVDeg    | Vertical opening of the fan |
-| 24     | float32 | paddingDeg        | Grid extends this far beyond swath/vFOV on each side. ≥ 0 ([Ray Geometry](#ray-geometry)) |
-| 28     | float32 | mountTiltDeg      | Boresight elevation in the body frame: 0 = ahead, −90 = down, positive = up |
-| 32     | float32 | speedOfSound      | m/s |
-| 36     | float32 | sourceLevel_dB    | dB re 1 µPa at 1 m |
-| 40     | float32 | pulseLength_s     | Pulse duration, seconds |
-| 44     | float32 | frequency_Hz      | Centre frequency |
-| 48     | float32 | bandwidth_Hz      | Pulse bandwidth. `0` = continuous-wave pulse, so the generator uses `1/pulseLength_s` |
-| 52     | uint16  | gridWidth         | Azimuth samples W (e.g. 512) |
-| 54     | uint16  | gridHeight        | Elevation samples H (e.g. 128) |
-| 56     | uint32  | planeMask         | Optional FRAME planes. Bit 0 = normals, bit 1 = object IDs, bit 2 = specular bounce. Bits 3–31 are reserved and must be 0 |
-| 60     | uint32  | imgType           | `0` = polar, `1` = Cartesian |
-| 64     | uint16  | imgWidth          | Cartesian only: pixels across (x, starboard). Ignored for polar |
-| 66     | uint16  | imgHeight         | Cartesian only: pixels along (y, forward). Ignored for polar |
+| 24     | float32 | mountTiltDeg      | Boresight elevation in the body frame: 0 = ahead, −90 = down, positive = up |
+| 28     | float32 | speedOfSound      | m/s |
+| 32     | float32 | sourceLevel_dB    | dB re 1 µPa at 1 m |
+| 36     | float32 | pulseLength_s     | Pulse duration, seconds |
+| 40     | uint16  | gridWidth         | Azimuth samples W (e.g. 512) |
+| 42     | uint16  | gridHeight        | Elevation samples H (e.g. 128) |
+| 44     | uint32  | imgType           | `0` = polar, `1` = Cartesian |
+| 48     | uint16  | imgWidth          | Cartesian only: pixels across (x, starboard). Ignored for polar |
+| 50     | uint16  | imgHeight         | Cartesian only: pixels along (y, forward). Ignored for polar |
+
+Centre frequency and pulse bandwidth are **not** in CONFIG. They are fixed in the generator, as agreed at the
+start of the project. If they need to change per session, both can be added to CONFIG on request.
 
 ### Valid values
 
@@ -205,13 +209,11 @@ The generator answers ACK status `1` if any of these is violated. All float fiel
 | Field(s) | Constraint |
 |----------|------------|
 | numberOfBeams, numberOfRangeBins, gridWidth, gridHeight | ≥ 1 |
-| maxRange, swathAngleDeg, verticalFOVDeg, speedOfSound, pulseLength_s, frequency_Hz | > 0 |
-| paddingDeg, bandwidth_Hz | ≥ 0 (`0` is meaningful for both) |
-| swathAngleDeg + 2·paddingDeg | ≤ 360 (and swathAngleDeg ≤ 180 when imgType = 1) |
-| verticalFOVDeg + 2·paddingDeg | ≤ 180 |
+| maxRange, swathAngleDeg, verticalFOVDeg, speedOfSound, pulseLength_s | > 0 |
+| swathAngleDeg | ≤ 360 (≤ 180 when imgType = 1) |
+| verticalFOVDeg | ≤ 180 |
 | mountTiltDeg | −90 … +90 |
 | sourceLevel_dB | any finite value |
-| planeMask | bits 3–31 = 0 |
 | imgType | 0 or 1 |
 | imgWidth, imgHeight | ≥ 1 when imgType = 1; ignored (send 0) when imgType = 0 |
 | gridWidth · gridHeight, and image N · M | ≤ 4,194,304 |
@@ -246,27 +248,23 @@ Every float64 sits at an 8-byte-aligned offset.
 | 168    | uint32    | flags     |       | Bit 0: sonar submerged (1 = in water). When 0, the generator ignores all returns and sends a noise-floor-only image. Other bits reserved (0) |
 | 172    | uint32    | reserved  |       | `0` |
 
-All angles and sizes for the grid come from the current CONFIG. A v3 generator uses `flags`, `sonarRot`,
-`sonarDep` and `waveHgt`. It echoes the other fields back unchanged
+All angles and sizes for the grid come from the current CONFIG. A v3 generator uses `flags` and `waveHgt`.
+It echoes the other fields back unchanged
 ([responses, Q6](../docs/protocol_v3_responses.md#q6-table-1-fields-in-the-frame-header)).
 
 ### Data Planes
 
-The planes follow the header in this order, each stored row-major as `H` rows of `W` cells, with row `r` and
-column `c` as in [Ray Geometry](#ray-geometry). Optional planes are present only when their `planeMask` bit is set.
+Three planes follow the header in this order, each stored row-major as `H` rows of `W` cells, with row `r` and
+column `c` as in [Ray Geometry](#ray-geometry). All three are always present.
 
-| # | Plane          | Type per cell | Bytes/cell | Present | Content |
-|---|----------------|---------------|-----------:|---------|---------|
-| 1 | range          | float32       | 4 | always | First-hit range along the ray, metres, from `sonarPos`. `0.0` = no return within maxRange |
-| 2 | material       | uint8         | 1 | always | [Material ID](#material-ids) of the first hit |
-| 3 | normal         | int16 × 3     | 6 | bit 0  | Surface normal at the first hit, **body frame (FRD)**, encoded as described below |
-| 4 | objectId       | uint16        | 2 | bit 1  | Per-object ID assigned by Unity, stable for the lifetime of the connection. `0` = none |
-| 5 | bounceRange    | float32       | 4 | bit 2  | Distance from the first hit to the next surface along the **specular reflection** of the ray, metres. `0.0` = no second hit within `maxRange − range` |
-| 6 | bounceMaterial | uint8         | 1 | bit 2  | Material ID of that second hit |
+| # | Plane    | Type per cell | Bytes/cell | Content |
+|---|----------|---------------|-----------:|---------|
+| 1 | range    | float32       | 4 | First-hit range along the ray, metres, from `sonarPos`. `0.0` = no return within maxRange |
+| 2 | material | uint8         | 1 | [Material ID](#material-ids) of the first hit |
+| 3 | normal   | int16 × 3     | 6 | Surface normal at the first hit (`RaycastHit.normal`), **body frame (FRD)**, encoded as described below |
 
-**Cells with no return.** Where `range = 0`, every plane holds 0. Where `bounceRange = 0`, `bounceMaterial` is
-0. A valid range is finite and in (0, maxRange]. Receivers treat any other value (negative, NaN, Inf, or
-greater than maxRange) as no return.
+**Cells with no return.** Where `range = 0`, every plane holds 0. A valid range is finite and in (0, maxRange].
+Receivers treat any other value (negative, NaN, Inf, or greater than maxRange) as no return.
 
 **Normal encoding.** Each component is `clamp(round(n · 32767), −32767, 32767)`, never −32768, and is decoded
 as `n = v / 32767`. The normal points out of the surface, toward the side the ray came from. For the water
@@ -274,16 +272,14 @@ surface seen from below, that means the normal points down. In Unity:
 `nLocal = Quaternion.Inverse(transform.rotation) * hit.normal`, then `n_FRD = (nLocal.z, nLocal.x, −nLocal.y)`.
 
 The generator reconstructs the hit point as `sonarPos + R(q) · range · dir(az, el)`, so the point itself is not sent.
-Bounce planes 5 and 6 are defined now so the size is stable. A generator that does not yet model multipath
-answers a CONFIG with bit 2 set using ACK status `4`.
 
 ### Frame size
 
 ```
-frameLength = 176 + W·H · (5 + 6·b0 + 2·b1 + 5·b2)          # bN = planeMask bit N
+frameLength = 176 + 11·W·H
 ```
 
-Example, 512 × 128 with normals only (`planeMask = 1`): 176 + 65,536 · 11 = **721,072 bytes**.
+Example, 512 × 128: 176 + 65,536 · 11 = **721,072 bytes**.
 
 ---
 
@@ -322,10 +318,10 @@ Sent once per CONFIG, in the order the CONFIGs arrived.
 | status | Meaning |
 |--------|---------|
 | 0      | OK: CONFIG accepted and now active |
-| 1      | Invalid value: a field violates [Valid values](#valid-values), including a reserved `planeMask` bit set |
-| 2      | Malformed: payload length is not 68 bytes |
+| 1      | Invalid value: a field violates [Valid values](#valid-values) |
+| 2      | Malformed: payload length is not 52 bytes |
 | 3      | Unsupported `protocolVersion` |
-| 4      | Unsupported option: a defined `planeMask` bit (0–2) or `imgType` that this generator does not implement yet |
+| 4      | Unsupported option: an `imgType` that this generator does not implement yet |
 
 ---
 
@@ -390,14 +386,14 @@ the 8-byte prefix; "message offset" includes the prefix.
 
 ```
 Unity                                              Generator
-  │ ── CONFIG      39 B8 A4 3B | 44 00 00 00 | 68 B ──────────▶ │  validate, apply
+  │ ── CONFIG      39 B8 A4 3B | 34 00 00 00 | 52 B ──────────▶ │  validate, apply
   │ ◀──────────── 39 B8 A4 3B | 08 00 00 00 | 01 00 00 00 00 00 00 00 ── CONFIG_ACK (status 0)
   │ ── FRAME #42   39 B8 A4 3B | B0 00 0B 00 | 721,072 B ─────▶ │  collapse to image
   │ ◀──────────── 39 B8 A4 3B | C0 28 0A 00 | 665,792 B ───── IMAGE #42
   │ ── FRAME #43 …  (sent only after IMAGE #42 arrived; lock-step)
 ```
 
-### CONFIG: 150° × 25° fan, 512 × 128 grid, normals plane, polar output
+### CONFIG: 150° × 25° fan, 512 × 128 grid, polar output
 
 | Offset | Type | Field | Example value | Bytes (hex, as sent) |
 |---:|---|---|---|---|
@@ -408,28 +404,23 @@ Unity                                              Generator
 | 12 | float32 | maxRange | 30.0 m | `00 00 F0 41` |
 | 16 | float32 | swathAngleDeg | 150.0 | `00 00 16 43` |
 | 20 | float32 | verticalFOVDeg | 25.0 | `00 00 C8 41` |
-| 24 | float32 | paddingDeg | 0.0 (normals sent) | `00 00 00 00` |
-| 28 | float32 | mountTiltDeg | −20.0 (20° below ahead) | `00 00 A0 C1` |
-| 32 | float32 | speedOfSound | 1500.0 m/s | `00 80 BB 44` |
-| 36 | float32 | sourceLevel_dB | 220.0 | `00 00 5C 43` |
-| 40 | float32 | pulseLength_s | 0.0001 s | `17 B7 D1 38` |
-| 44 | float32 | frequency_Hz | 400000.0 | `00 50 C3 48` |
-| 48 | float32 | bandwidth_Hz | 0.0 (CW → 1/τ) | `00 00 00 00` |
-| 52 | uint16 | gridWidth | 512 | `00 02` |
-| 54 | uint16 | gridHeight | 128 | `80 00` |
-| 56 | uint32 | planeMask | 1 = normals | `01 00 00 00` |
-| 60 | uint32 | imgType | 0 = polar | `00 00 00 00` |
-| 64 | uint16 | imgWidth | 0 (ignored, polar) | `00 00` |
-| 66 | uint16 | imgHeight | 0 (ignored, polar) | `00 00` |
+| 24 | float32 | mountTiltDeg | −20.0 (20° below ahead) | `00 00 A0 C1` |
+| 28 | float32 | speedOfSound | 1500.0 m/s | `00 80 BB 44` |
+| 32 | float32 | sourceLevel_dB | 220.0 | `00 00 5C 43` |
+| 36 | float32 | pulseLength_s | 0.0001 s | `17 B7 D1 38` |
+| 40 | uint16 | gridWidth | 512 | `00 02` |
+| 42 | uint16 | gridHeight | 128 | `80 00` |
+| 44 | uint32 | imgType | 0 = polar | `00 00 00 00` |
+| 48 | uint16 | imgWidth | 0 (ignored, polar) | `00 00` |
+| 50 | uint16 | imgHeight | 0 (ignored, polar) | `00 00` |
 
-Complete message (8-byte prefix + 68-byte payload):
+Complete message (8-byte prefix + 52-byte payload):
 
 ```
-00000000  39 B8 A4 3B 44 00 00 00  01 00 00 00 03 00 00 00
+00000000  39 B8 A4 3B 34 00 00 00  01 00 00 00 03 00 00 00
 00000010  00 01 8A 02 00 00 F0 41  00 00 16 43 00 00 C8 41
-00000020  00 00 00 00 00 00 A0 C1  00 80 BB 44 00 00 5C 43
-00000030  17 B7 D1 38 00 50 C3 48  00 00 00 00 00 02 80 00
-00000040  01 00 00 00 00 00 00 00  00 00 00 00
+00000020  00 00 A0 C1 00 80 BB 44  00 00 5C 43 17 B7 D1 38
+00000030  00 02 80 00 00 00 00 00  00 00 00 00
 ```
 
 ### CONFIG_ACK: accepted
@@ -557,8 +548,9 @@ MSG_CONFIG_ACK = 1
 MSG_IMAGE      = 2
 
 PREFIX_SIZE       = 8          # magic + payloadLength
-CONFIG_SIZE       = 68
+CONFIG_SIZE       = 52
 FRAME_HEADER_SIZE = 176
+FRAME_CELL_SIZE   = 11         # range 4 + material 1 + normal 6
 CONFIG_ACK_SIZE   = 8
 IMAGE_HEADER_SIZE = 192        # 16 + echoed FRAME header
 
@@ -567,10 +559,6 @@ ACK_INVALID_VALUE      = 1
 ACK_MALFORMED          = 2
 ACK_UNSUPPORTED_VER    = 3
 ACK_UNSUPPORTED_OPTION = 4
-
-PLANE_NORMALS   = 1 << 0
-PLANE_OBJECT_ID = 1 << 1
-PLANE_BOUNCE    = 1 << 2
 
 IMG_POLAR     = 0
 IMG_CARTESIAN = 1
