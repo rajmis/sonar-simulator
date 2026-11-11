@@ -72,10 +72,14 @@ def main():
             server.send_response(ping_id, response)
 
             if args.dump_dir is not None:
+                import dataclasses
+                import json
                 import numpy as np
                 np.save(args.dump_dir / "ranges.npy", ranges)
                 np.save(args.dump_dir / "materials.npy", material_ids)
                 np.save(args.dump_dir / "intensity.npy", image)
+                (args.dump_dir / "header.json").write_text(
+                    json.dumps(dataclasses.asdict(header), indent=2))
 
             dt_ms = (time.perf_counter() - t0) * 1000
             ping_count += 1
