@@ -1,5 +1,10 @@
 # Sonar Simulator TCP Protocol Specification
 
+> **Superseded.** This file describes the protocol the code in this repository implements today (88-byte
+> FRAME header, no CONFIG handshake). It is superseded by [`PROTOCOL_v2.md`](PROTOCOL_v2.md), the version
+> implemented by the other team, and by [`PROTOCOL_v3.md`](PROTOCOL_v3.md), the current draft. Keep it only as
+> a reference until the code moves to v3.
+
 ## Overview
 
 Unity (client) connects to Python (server) on `localhost:9000`.
