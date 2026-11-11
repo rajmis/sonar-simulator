@@ -2,7 +2,8 @@
 
 2026-11-11 · answers to the questions raised after the **old version (v2)**,
 [`shared/PROTOCOL_v2.md`](../shared/PROTOCOL_v2.md), was implemented.
-The **new version (v3)** is [`shared/PROTOCOL_v3.md`](../shared/PROTOCOL_v3.md) (draft).
+The **new version (v3)** is [`shared/PROTOCOL_v3.md`](../shared/PROTOCOL_v3.md) (draft). It covers what Unity
+sends out (pose, and range, material ID and surface normal for every cell) and the image it receives back.
 
 Three findings change the design and are worth reading first:
 
@@ -26,10 +27,10 @@ Question 14 was not in the list, so these responses skip from Q13 to Q15b.
 | Q1. Send the complete RaycastHit? | Send the surface normal (`RaycastHit.normal`) for every cell, alongside the range and material ID already sent. The rest of the struct is redundant or meaningless outside Unity |
 | Q2. Add a magic number prefix? | Yes: `[magic 0x3BA4B839][length][payload]` |
 | Q3. What is the optimal `paddingDeg`? | None: `paddingDeg` is removed, because Unity now sends the normals |
-| Q4. Add pulse bandwidth to CONFIG? | No. Centre frequency and bandwidth stay fixed in the generator, as agreed at the start of the project. Both can be added to CONFIG if you need them to vary |
+| Q4. Add pulse bandwidth to CONFIG? | No. Centre frequency and bandwidth stay fixed, as instructed at the start of the project. Both can be added to CONFIG if you need them to vary |
 | Q5. Multipath and later hits? | Out of scope for v3. FRAMEs carry the first hit only |
-| Q6. Add the Table 1 fields to the FRAME header? | Yes, all of them (header grows to 176 bytes). Used now: submerged flag, wave height. The rest are echoed back for logging and later use |
-| Q7. Is our Euler ↔ quaternion convention right? | Yes: ZYX, Hamilton, scalar last, body → NED. Unity's pose needs converting to NED / FRD first |
+| Q6. Add the Table 1 fields to the FRAME header? | Yes, all of them (the header grows to 176 bytes), and every IMAGE echoes them back |
+| Q7. Is our Euler ↔ quaternion convention right? | Yes: ZYX, Hamilton, scalar last, body → NED. Unity's pose must be converted to NED / FRD first |
 | Q8–9. Are el, az and the ray direction independent of attitude? | Yes: all three are body-frame quantities |
 | Q10. Elevation 0 = ahead, −90 = down? | Adopted, for both `el` and `mountTiltDeg` |
 | Q11. Object materials? | IDs 64–67: metal, wood, concrete, rubber |
@@ -46,12 +47,12 @@ Question 14 was not in the list, so these responses skip from Q13 to Q15b.
 We checked what RaycastHit contains in Unity 6000.6.8f1 with a throwaway probe project (see
 [Feasibility checks](#feasibility-checks)). It is a 48-byte struct with these fields:
 
-| Field | Useful to the generator? |
-|-------|--------------------------|
-| `normal` | **Yes.** It replaces normals estimated from depth differences. Those are approximate at edges (a cell at a silhouette edge is currently treated as hit head-on) and need padding cells |
+| Field | Needed outside Unity? |
+|-------|-----------------------|
+| `normal` | **Yes.** It gives the exact surface orientation at every hit. Without it, the orientation has to be estimated from range differences between neighbouring cells, which is approximate at object edges and needs extra padding cells around the grid |
 | `distance` | Already sent (the range plane) |
 | `point` | Redundant: `point = sonarPos + distance · dir` |
-| `colliderEntityId` | No. It identifies *which* object was hit, and the raw value is only meaningful inside the running Unity process. What the generator needs is what the object is *made of*, which the material ID already gives |
+| `colliderEntityId` | No. It identifies *which* object was hit, and the raw value is only meaningful inside the running Unity process. What matters is what the object is *made of*, which the material ID already gives |
 | `triangleIndex`, `barycentricCoordinate`, `textureCoord(2)`, `lightmapCoord` | No. They are only meaningful on MeshColliders; on primitive colliders the probe returned `triangleIndex = −1` and a texture coordinate of `(0, 0)` |
 | `collider`, `transform`, `rigidbody`, `articulationBody` | Object references; they cannot be serialised |
 
@@ -59,13 +60,13 @@ So each cell carries three values: range, material ID and normal. The material I
 material assignment in Unity, not from RaycastHit, and was already in v2.
 
 v3 adds the normal plane as 3 × int16 per cell. Each component is stored as `round(n · 32767)`, which keeps
-the angle error around 0.003°. The normal is given in the sonar body frame, so the generator doesn't need the
+the angle error around 0.003°. The normal is given in the sonar body frame, so the receiver doesn't need the
 pose to use it. Cost for 512 × 128: +393 KB per frame. That brings the frame to 721 KB, about 87 Mbit/s at 15 Hz,
 which is fine on localhost or gigabit Ethernet. A float32 × 3 plane would double that cost without adding
 useful precision.
 
 One thing to know for Unity upgrades: in Unity 6.6, `RaycastHit.colliderInstanceID` is a **compile error**
-(use `colliderEntityId` instead). The repository doesn't use it today.
+(use `colliderEntityId` instead).
 
 ## Q2. Magic number prefix
 
@@ -77,46 +78,35 @@ CONFIG now also carries `protocolVersion = 3`.
 
 ## Q3. Choosing `paddingDeg`
 
-`paddingDeg` is **removed** in v3. In v2 its only purpose was to give the generator neighbouring cells beyond
-the edge of the fan, so it could estimate surface normals from range differences. Unity now sends the normal
-from `RaycastHit.normal` for every cell (Q1), so those extra cells are no longer needed. The grid covers
-exactly the swath and the vertical field of view, and every cell contributes to the image.
-
-The generator still looks at neighbouring cells for one thing: estimating how far each cell's footprint spreads
-in range. At the grid edges it uses one-sided differences, so it needs no padding.
+`paddingDeg` is **removed** in v3. In v2 its only purpose was to provide neighbouring cells beyond the edge of
+the fan, so that surface normals could be estimated from range differences. Unity now sends the normal from
+`RaycastHit.normal` for every cell (Q1), so those extra cells are no longer needed. The grid covers exactly
+the swath and the vertical field of view, and every cell Unity casts contributes to the image.
 
 For reference, with the v2 default of 2° padding (150° × 25° fan, 512 × 128 grid), about 7 azimuth columns
-and 9 elevation rows per side were padding: **16% of every frame** was sent but never binned.
+and 9 elevation rows per side were padding: **16% of every frame** was sent but never used in the image.
 
 ## Q4. Pulse bandwidth
 
-Not added. The centre frequency and pulse bandwidth stay **fixed in the generator**, as in the configuration
-agreed at the start of the project, so v3 also removes `frequency_Hz` from CONFIG. If you need either to
-change per session (for example, to simulate a different sonar or an FM chirp), tell us and both will be added
-to CONFIG.
-
-For background: bandwidth, not pulse length, sets range resolution, `δr = c / (2B)`. For a continuous-wave
-pulse `B ≈ 1/τ`; for an FM chirp with matched filtering `B` can be far larger than `1/τ`.
+Not added. The centre frequency and pulse bandwidth stay **fixed**, as instructed at the
+start of the project, so v3 also removes `frequency_Hz` from CONFIG. If you need either to change per session
+(for example, to simulate a different sonar or an FM chirp), tell us and both will be added to CONFIG.
 
 ## Q5. Multipath and later hits
 
-**Out of scope for v3.** Each FRAME carries the first hit of every ray only, and the generator does not
-model multipath. The water surface's own direct return is still covered: it is a first hit with material
-ID 33.
+**Out of scope for v3.** Each FRAME carries the first hit of every ray only. The water surface's own direct
+return is still included: it is a first hit with material ID 33.
 
 ## Q6. Table 1 fields in the frame header
 
-All the Table 1 fields are added (124 bytes), and every float64 sits at an 8-byte-aligned offset.
+All the Table 1 fields are added (124 bytes), and every float64 sits at an 8-byte-aligned offset. Every IMAGE
+echoes the whole header back byte for byte (Q12), so each image carries its own navigation data.
 
-| Field | Generator use |
-|-------|---------------|
-| `waveHgt` | **Now.** Roughness of the water surface's direct return (material 33): a rougher surface scatters more energy back toward the sonar |
-| `waveFrq`, `waveDir` | Later: time-varying surface roughness. Echoed for now |
-| `U V W P Q R` | Later: platform motion during a ping. At 30 m the round trip is 40 ms. A 10°/s yaw rate smears returns by 0.4°, about 70% of the 0.59° beam spacing |
-| `φ θ ψ` | Not used: the quaternion is authoritative. Kept for logging and MATLAB, and must be derived from `sonarRot` |
-| `sonarDep` | Not needed to form the image: the surface return is already in the range plane, and the `flags` submerged bit is the authoritative "in water" signal. Echoed back |
-| `sonarLat`, `sonarLon`, `sonarAlt` | Not needed to form the image; altitude is already in the range plane. Echoed back for georeferencing and labelling |
-| `uwNorth`, `uwEast` | No acoustic effect at these ranges. Echoed back |
+Two notes for the Unity side:
+- φ, θ and ψ must be **derived from `sonarRot`** with the formulas in the spec. The quaternion is the
+  authoritative attitude; the Euler angles are there for logging and MATLAB.
+- `sonarDep` is measured from the top of the housing and `sonarAlt` from the bottom, while rays start at the
+  acoustic centre, `sonarPos`.
 
 **Assumptions to confirm** (Table 1 doesn't give units):
 - φ, θ and ψ are in **radians**, matching the MATLAB functions.
@@ -141,7 +131,8 @@ Two conditions apply:
    Y up, so `transform.rotation` must be converted. Assuming Unity +X = east and +Z = north:
    `q_NED = (−qz, −qx, qy, qw)` and `pos_NED = (z, x, −y)`. Both were verified exactly against `M·R·Mᵀ`.
    Sanity checks: Unity `Euler(0, +30, 0)` → ψ = +30°; `Euler(+10, 0, 0)` → θ = −10° (Unity's +X turns the
-   nose down); `Euler(0, 0, +10)` → φ = −10°.
+   nose down); `Euler(0, 0, +10)` → φ = −10°. The spec section "Converting from Unity" gives the full set,
+   including normals.
 2. **Clamp the `asin` argument** in `quaternion_to_euler` to [−1, 1]. Rounding can push it slightly past ±1,
    which makes MATLAB return a complex number. Near θ = ±90°, φ and ψ can't be separated (gimbal lock), which is
    one more reason the quaternion is authoritative.
@@ -172,8 +163,8 @@ dir(az, el) = Ry(τ) · ( cos el·cos az,  cos el·sin az,  −sin el ),   τ = 
 
 A single formula covers both kinds of sonar. `τ = 0` gives a horizontal forward-looking fan, and
 `τ = −90` gives a vertical swath across the sonar's track (a down-looking multibeam). Both were checked
-numerically, and the test vectors are in the spec. Converting an old v2 tilt to the new convention
-(boresight only): `τ_v3 = −90 − tilt_v2`.
+numerically, and the test vectors (with the matching Unity local directions) are in the spec. Converting an old
+v2 tilt to the new convention (boresight only): `τ_v3 = −90 − tilt_v2`.
 
 ## Q11. Object material IDs
 
@@ -184,8 +175,8 @@ numerically, and the test vectors are in the spec. Converting an old v2 tilt to 
 | 66 | Concrete | Pillar |
 | 67 | Rubber | Tyre |
 
-IDs 68–255 are reserved for further materials. The acoustic parameters (reflectivity, scattering, absorption)
-live in the generator's material table, not in the protocol, so adding a material doesn't change the protocol.
+IDs 68–255 are reserved for further materials. Unity only sends the ID; adding a material needs a new ID and
+nothing else in the protocol.
 
 ## Q12. Echoing the FRAME header in IMAGE
 
@@ -195,9 +186,8 @@ The cost is 176 bytes on a 665 KB image.
 
 ## Q13. Polar or Cartesian output
 
-Yes. The current output is a polar image, one column per beam and one row per range bin. v3 adds
-Cartesian output, sampled from the polar image with bilinear interpolation. This costs very little in the
-generator, which already holds the polar image as a GPU tensor.
+Yes. The current output is a polar image, one column per beam and one row per range bin. v3 adds a
+Cartesian image as an alternative.
 
 The choice goes in **CONFIG** (`imgType`, `imgWidth`, `imgHeight`), not the FRAME. Output type rarely changes
 mid-session, and changing it through CONFIG goes through the existing ACK handshake. The IMAGE repeats
@@ -207,12 +197,12 @@ mid-session, and changing it through CONFIG goes through the existing ACK handsh
 Cartesian details to note:
 - The Cartesian image lies in the plane of the fan. It shows slant range projected onto that plane, not
   ground range.
-- Pixels outside the fan are `NaN`.
+- Pixels outside the fan are `NaN`; display them as transparent.
 - Cartesian output requires `swathAngleDeg ≤ 180`.
 
 The spec also makes one existing detail explicit. The data is stored **one column at a time**: index =
-`j·M + i`, beam (or x) first. That is what the generator sends and Unity reads today, even though the old
-version's table called beams the "width" of a row-major image.
+`j·M + i`, beam (or x) first. That is what Unity reads today, even though the old version's table called
+beams the "width" of a row-major image.
 
 ## Q15b. S-57 NATSUR seabed classes
 
@@ -239,10 +229,10 @@ in a later version.
 | 2 | Protocol version | Not sent | CONFIG carries `protocolVersion = 3`; ACK status `3` if unsupported | Q2 |
 | 3 | CONFIG size | 48 bytes | 52 bytes | |
 | 4 | `paddingDeg` | CONFIG field; the grid extends past the swath and vertical FOV | **Removed.** The grid covers exactly the swath and vertical FOV | Q3 |
-| 5 | Surface normals | Estimated by the generator from range differences | **Sent by Unity** from `RaycastHit.normal`, in every FRAME (3 × int16, body frame) | Q1 |
-| 6 | `frequency_Hz` | CONFIG field | **Removed.** Centre frequency and bandwidth are fixed in the generator | Q4 |
+| 5 | Surface normals | Not sent | **Sent by Unity** from `RaycastHit.normal`, in every FRAME (3 × int16, body frame) | Q1 |
+| 6 | `frequency_Hz` | CONFIG field | **Removed.** Centre frequency and bandwidth are fixed | Q4 |
 | 7 | Output image | Polar only | Polar or Cartesian, chosen in CONFIG (`imgType`, `imgWidth`, `imgHeight`) | Q13 |
-| 8 | Coordinate frames | Unity world (left-handed, Y up); attitude convention unstated | World NED, body FRD, Hamilton quaternion (scalar last), ZYX Euler | Q7 |
+| 8 | Coordinate frames | Unity world (left-handed, Y up); attitude convention unstated | World NED, body FRD, Hamilton quaternion (scalar last), ZYX Euler; Unity converts before sending | Q7 |
 | 9 | Ray geometry | Zero direction straight down; azimuth about the forward axis | Elevation 0 = ahead, −90 = down; `mountTiltDeg` uses the same convention | Q8–Q10 |
 | 10 | FRAME header | 48 bytes | 176 bytes, with the Table 1 fields | Q6 |
 | 11 | FRAME size | `48 + 5·W·H` (327,728 bytes for 512 × 128) | `176 + 11·W·H` (721,072 bytes for 512 × 128) | Q1, Q6 |
@@ -251,7 +241,7 @@ in a later version.
 | 14 | IMAGE index order | "Row-major", with beams called the width | Stated explicitly: index = `j·M + i`, one beam at a time (same bytes as before) | Q13 |
 | 15 | CONFIG_ACK status | 0 OK, 1 invalid value, 2 malformed | Adds 3 unsupported version and 4 unsupported option; status 1 checked against a per-field valid-values table | |
 | 16 | Session rules | 6 rules ([listed below](#session-rules-old-and-new)) | Keeps all 6, makes rule 6 close the connection, and adds 4: lock-step exchange, closing on other protocol errors, sessions and `pingID` wrap-around, size limits ([listed below](#session-rules-old-and-new)) | |
-| 17 | Intensity scale | "Normalised 0–1", undefined | A **fixed** 60 dB window on the time-varied-gain-corrected received level, the same for every ping, so values convert back to dB re 1 µPa ([below](#intensity-scale-old-and-new)) | |
+| 17 | Intensity scale | "Normalised 0–1", undefined | A **fixed** 60 dB window, the same for every ping ([below](#intensity-scale-old-and-new)) | |
 
 Unchanged: TCP on port 9000, little-endian byte order, the four message types and their `msgType` values, the
 CONFIG → CONFIG_ACK → FRAME → IMAGE sequence, the range and material planes, and the submerged flag.
@@ -293,22 +283,20 @@ It adds four rules:
 
 ### Intensity scale: old and new
 
-The old version (v2) said only "normalised 0–1", without saying relative to what. Normalising each image to its
-own brightest pixel would act like an instant automatic gain control. A strong target entering the view would
-dim everything else, and the same echo would give different values on different pings. Real sonars don't do this.
-They measure an absolute received level, compensate range losses with a fixed **time-varied gain (TVG)**, and
-display it through a gain and contrast window that changes only when the operator changes it.
+The old version (v2) said only "normalised 0–1", without saying relative to what. If each image were
+normalised to its own brightest pixel, a strong target entering the view would dim everything else, and the
+same echo would give different values on different pings. Real sonar displays don't do this: they compensate
+range losses with a fixed time-varied gain and show the result through a gain and contrast window that changes
+only when the operator changes it.
 
-The new version (v3) follows the real sonar. Each value maps a TVG-corrected received level onto a 60 dB window
-that is **fixed for the generator**, the same on every ping and in every session. The value converts back to dB
-re 1 µPa, so values can be compared across pings and used for thresholds. The window and the TVG law are generator
-constants, like the centre frequency and bandwidth. This is a contract on what the image means, so it holds
-whether the generator is the current physics code or a learned model such as a U-Net trained to reproduce it.
+The new version (v3) follows the real sonar. Values are linear in dB over a 60 dB window that is the same for
+every ping and every session, with range losses already compensated. The same echo gives the same value on
+every ping, so values can be compared across pings and thresholded, and Unity can display them directly.
 
 ## Feasibility checks
 
 Code was written only where feasibility was uncertain. Everything else in v3 is specification only. These
-checks ran in throwaway projects outside the repository, so **no repository code changed**.
+checks ran in throwaway projects outside the repository.
 
 | Check | How | Result |
 |-------|-----|--------|
@@ -318,21 +306,15 @@ checks ran in throwaway projects outside the repository, so **no repository code
 | Unity → NED conversion (Q7) | NumPy, 10,000 random rotations | `(−qz, −qx, qy, qw)`, exact |
 | Old ray formula with tilt −90 (Q8–Q10) | NumPy | Every azimuth gives `(0, 0, 1)`: the fan collapses |
 | New ray formula | NumPy | Distinct rays; horizontal fan at τ = 0, across-track swath at τ = −90 |
-| Wire template in the spec | Reference encoder, then decoded again | Every byte, offset and size matches the tables |
 
-## Implementing v3
+## What changes on the Unity side
 
-None of this is implemented yet. In rough order:
-
-1. **Generator:** framing (magic, version), the new CONFIG and FRAME parsing, the new ray formula without
-   padding, using Unity's normals instead of estimating them, material table re-indexed to the v3 IDs
-   (steel → metal 64, sand → NATSUR 4, ...), echoed header, Cartesian resampling, ACK codes 3 and 4, and
-   the fixed intensity scale with TVG in place of today's per-image normalisation.
-2. **Unity:** NED / FRD conversion of pose and normals, the normals plane, Table 1 fields, material IDs, the
-   new ray formula in `SonarRaycaster`, and lock-step sending (today Unity sends FRAMEs without waiting for
-   the IMAGE).
-3. **Later:** motion compensation using U–R (Q6), wave-driven surface roughness.
-
-One more Unity note: the installed editor is **6000.6.8f1**, but the project is pinned to **6000.3.10f1**.
-Opening it in 6.6 upgrades the project. Install 6000.3.10f1 alongside 6.6 (`unityhub` → Installs), and keep
-the project on 6000.3.10f1.
+1. **Framing:** magic number and `protocolVersion`, the 52-byte CONFIG, and handling ACK statuses 0–4.
+2. **Pose:** convert position, rotation and normals from Unity to NED / FRD; derive φ, θ, ψ from the converted
+   quaternion; fill the Table 1 fields.
+3. **Rays:** cast the grid with the new ray formula and no padding, and send the normals plane alongside range
+   and material.
+4. **Materials:** tag colliders with the v3 material IDs (NATSUR seabed, 33 water surface, 64–67 objects).
+5. **Lock-step sending:** send the next FRAME only after the previous IMAGE has arrived, skipping pings that
+   fall due while waiting.
+6. **IMAGE:** read the 192-byte header and, for Cartesian output, display `NaN` pixels as transparent.
