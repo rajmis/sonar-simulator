@@ -35,7 +35,7 @@ reflections) is out of scope for this version.
 | 14 | IMAGE index order | "Row-major", with beams called the width | Stated explicitly: index = `j·M + i`, one beam (column) at a time. Same bytes as v2 sent in practice |
 | 15 | CONFIG_ACK status | 0 OK, 1 invalid value, 2 malformed | Adds 3 unsupported version, 4 unsupported option; status 1 checked against a [Valid values](#valid-values) table |
 | 16 | Session rules | 6 rules | Adds lock-step exchange, strict ordering, size limits, mis-sized FRAME and unknown `msgType` handling, `pingID` wrap ([Session Rules](#session-rules)) |
-| 17 | Intensity scale | "Normalised 0–1" | Defined: a 60 dB window below each image's peak ([Intensity scale](#intensity-scale)) |
+| 17 | Intensity scale | "Normalised 0–1", undefined | A **fixed** 60 dB window on the TVG-corrected received level, the same for every ping ([Intensity scale](#intensity-scale)) |
 
 ---
 
@@ -369,10 +369,27 @@ images never contain `NaN`.
 
 ### Intensity scale
 
-Each image is converted to decibels and mapped linearly onto a 60 dB window ending at **that image's
-peak**: peak → 1, peak − 60 dB → 0, clamped to 0–1, with the generator's noise model added. So values can be
-compared within one image but not between images. If absolute levels are ever needed, the window will need
-to become a CONFIG field.
+Values are on a **fixed, absolute scale**, as on a real sonar display. They are not normalised per image.
+
+```
+L_tvg = RL + TVG(r)                                  # dB; RL = received level, dB re 1 µPa
+value = clamp( (L_tvg − floor_dB) / 60, 0, 1 )       # inverse: L_tvg = floor_dB + 60 · value
+```
+
+- `RL` is the received level for that beam and range bin, including the receiver noise floor, as a real
+  sonar would measure it.
+- `TVG(r)` is a time-varied gain that compensates spreading and absorption loss along range, so the same
+  seabed looks similar near and far.
+- `floor_dB` is the bottom of a 60 dB display window.
+
+`TVG(r)` and `floor_dB` are **generator constants**, fixed in the generator's configuration like the centre
+frequency and bandwidth. They are the same for every ping and every session. The same echo therefore gives the
+same value on every ping, so values can be compared across pings and thresholded. A strong target does not dim
+the rest of the image. If the window or the TVG law needs to vary per session, both can be added to CONFIG on
+request.
+
+This defines what an image means, not how it is computed. Any generator, physics-based or learned (for
+example a U-Net), must produce images on this scale.
 
 ---
 

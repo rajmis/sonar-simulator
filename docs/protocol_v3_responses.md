@@ -250,11 +250,60 @@ in a later version.
 | 13 | IMAGE header | 12 bytes; echoes `pingID` | 192 bytes; echoes the full FRAME header and states `imgType` | Q12, Q13 |
 | 14 | IMAGE index order | "Row-major", with beams called the width | Stated explicitly: index = `j·M + i`, one beam at a time (same bytes as before) | Q13 |
 | 15 | CONFIG_ACK status | 0 OK, 1 invalid value, 2 malformed | Adds 3 unsupported version and 4 unsupported option; status 1 checked against a per-field valid-values table | |
-| 16 | Session rules | 6 rules | Adds the lock-step exchange (one FRAME at a time; skipped pings are not queued), strict ordering, size limits, closing on a mis-sized FRAME or unknown `msgType`, and `pingID` wrap-around | |
-| 17 | Intensity scale | "Normalised 0–1" | Defined: a 60 dB window below each image's peak | |
+| 16 | Session rules | 6 rules ([listed below](#session-rules-old-and-new)) | Keeps all 6, makes rule 6 close the connection, and adds 4: lock-step exchange, closing on other protocol errors, sessions and `pingID` wrap-around, size limits ([listed below](#session-rules-old-and-new)) | |
+| 17 | Intensity scale | "Normalised 0–1", undefined | A **fixed** 60 dB window on the time-varied-gain-corrected received level, the same for every ping, so values convert back to dB re 1 µPa ([below](#intensity-scale-old-and-new)) | |
 
 Unchanged: TCP on port 9000, little-endian byte order, the four message types and their `msgType` values, the
 CONFIG → CONFIG_ACK → FRAME → IMAGE sequence, the range and material planes, and the submerged flag.
+
+### Session rules: old and new
+
+The old version (v2) had six session rules:
+
+1. The first message after connecting must be a CONFIG.
+2. The generator replies to every CONFIG with exactly one CONFIG_ACK. Unity waits for that ACK before
+   sending any FRAME.
+3. If the ACK status is `0` (OK), the new CONFIG applies to every following FRAME until the next accepted
+   CONFIG. If the status is non-zero, the generator discards that CONFIG and keeps the previously accepted one,
+   if any; Unity logs the status, fixes the values and resends.
+4. When any config field changes, Unity sends the new CONFIG and waits for its ACK before the first FRAME
+   that uses the new values.
+5. A FRAME received before any accepted CONFIG is a protocol error: the generator logs it and closes the
+   connection.
+6. The generator checks each FRAME's payload length against the current CONFIG (`48 + 5·W·H`) and rejects
+   frames that do not match.
+
+The new version (v3) keeps rules 1–5 unchanged and tightens rule 6:
+
+6. Receivers work out the expected length from the active CONFIG (now `176 + 11·W·H`) and never allocate
+   memory from the wire value. A mis-sized FRAME is a protocol error: the generator logs it and **closes the
+   connection**. (v2 said only "rejects", which left open whether the connection survives.)
+
+It adds four rules:
+
+7. **Strict order, lock-step.** Messages are processed in order, and every FRAME belongs to exactly one
+   CONFIG. Unity sends the next FRAME only after the IMAGE for the previous one has arrived. Pings that fall
+   due while Unity is waiting are skipped, not queued.
+8. **Other protocol errors.** An unknown `msgType`, or a `payloadLength` below 4, closes the connection. A
+   CONFIG with the wrong length gets ACK status `2`.
+9. **Sessions.** A session is one TCP connection. `pingID` increases by 1 per FRAME, wraps modulo 2³², and may
+   restart from any value after a reconnect.
+10. **Size limits.** `gridWidth · gridHeight ≤ 4,194,304` and image `N · M ≤ 4,194,304`. A CONFIG over
+    either limit gets ACK status `1`.
+
+### Intensity scale: old and new
+
+The old version (v2) said only "normalised 0–1", without saying relative to what. Normalising each image to its
+own brightest pixel would act like an instant automatic gain control. A strong target entering the view would
+dim everything else, and the same echo would give different values on different pings. Real sonars don't do this.
+They measure an absolute received level, compensate range losses with a fixed **time-varied gain (TVG)**, and
+display it through a gain and contrast window that changes only when the operator changes it.
+
+The new version (v3) follows the real sonar. Each value maps a TVG-corrected received level onto a 60 dB window
+that is **fixed for the generator**, the same on every ping and in every session. The value converts back to dB
+re 1 µPa, so values can be compared across pings and used for thresholds. The window and the TVG law are generator
+constants, like the centre frequency and bandwidth. This is a contract on what the image means, so it holds
+whether the generator is the current physics code or a learned model such as a U-Net trained to reproduce it.
 
 ## Feasibility checks
 
@@ -277,7 +326,8 @@ None of this is implemented yet. In rough order:
 
 1. **Generator:** framing (magic, version), the new CONFIG and FRAME parsing, the new ray formula without
    padding, using Unity's normals instead of estimating them, material table re-indexed to the v3 IDs
-   (steel → metal 64, sand → NATSUR 4, ...), echoed header, Cartesian resampling, and ACK codes 3 and 4.
+   (steel → metal 64, sand → NATSUR 4, ...), echoed header, Cartesian resampling, ACK codes 3 and 4, and
+   the fixed intensity scale with TVG in place of today's per-image normalisation.
 2. **Unity:** NED / FRD conversion of pose and normals, the normals plane, Table 1 fields, material IDs, the
    new ray formula in `SonarRaycaster`, and lock-step sending (today Unity sends FRAMEs without waiting for
    the IMAGE).
