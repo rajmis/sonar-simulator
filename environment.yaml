@@ -1,11 +1,13 @@
 name: sonar-sim
 channels:
-  - conda-forge
-  - defaults
+  - conda-forge   # conda-forge only: mixing in `defaults` can pull a CPU-only torch
 dependencies:
   - python=3.11
   - numpy
   - pyyaml
   - opencv  # cv2 — for future visualisation tools
-  - pytorch>=2.2  # GPU frame collapse; for CUDA builds use e.g. `pytorch=*=*cuda12*`
+  - pytorch>=2.2      # GPU frame collapse
+  - pytorch-gpu>=2.2  # forces the CUDA build of pytorch (needs an NVIDIA driver);
+                      # on a CPU-only machine, delete this line
+  - matplotlib    # tools/visualize_frame.py
   - pip
