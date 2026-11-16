@@ -54,10 +54,10 @@ Every payload begins with a `uint32 msgType`:
 6. Receivers work out the expected payload length from the active CONFIG ([Frame size](#frame-size)) and
    never allocate memory from the wire value. A FRAME whose `payloadLength` differs from that size is a
    protocol error: the generator logs it and closes the connection.
-7. Messages are processed strictly in order. Because Unity sends no FRAME between a CONFIG and its ACK, every
-   FRAME belongs to exactly one CONFIG. The exchange is **lock-step**: Unity sends the next FRAME only after
-   the IMAGE for the previous one has arrived. Pings that fall due while Unity is waiting are skipped, not
-   queued, so the effective ping rate is the lower of the configured rate and the round-trip rate.
+7. The exchange is **lock-step**: after sending a FRAME, Unity waits for its IMAGE before sending the next
+   FRAME. At most one FRAME is ever in flight, and neither side keeps a queue. Messages are processed strictly
+   in order, and because Unity also sends no FRAME between a CONFIG and its ACK, every FRAME belongs to exactly
+   one CONFIG.
 8. An unknown `msgType`, or a `payloadLength` below 4, is a protocol error: log and close the connection.
    A CONFIG with the wrong length gets ACK status `2`.
 9. A **session** is one TCP connection. `pingID` increases by 1 per FRAME and wraps modulo 2³². It may
@@ -91,7 +91,7 @@ Every payload begins with a `uint32 msgType`:
 | 50     | uint16  | imgHeight         | Cartesian only: pixels along (y, forward). Send 0 for polar |
 
 Centre frequency and pulse bandwidth are **not** in CONFIG. They are fixed, as instructed at the start of the
-project. If they need to change per session, both can be added to CONFIG on request.
+project.
 
 ### Valid values
 
@@ -354,7 +354,7 @@ transparent. Polar images never contain `NaN`.
 
 Values are on a **fixed scale**, as on a real sonar display. They are not normalised per image:
 
-- Linear in dB over a 60 dB window: `0` is the bottom of the window and `1` is 60 dB above it.
+- Linear in dB over a fixed window: `0` is the bottom of the window and `1` is the top.
 - Range losses are already compensated, so the same seabed appears similarly bright near and far.
 - The window is the same for every ping and every session, so the same echo gives the same value on every
   ping. Values can be compared across pings and thresholded, and a strong target does not dim the rest of the image.
