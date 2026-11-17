@@ -1,18 +1,14 @@
 # Protocol v3: Generator Notes (internal)
 
-**Internal. Not for the other team.** The shared docs, [`shared/PROTOCOL_v3.md`](../shared/PROTOCOL_v3.md) and
-[`protocol_v3_responses.md`](protocol_v3_responses.md), cover only what Unity sends and receives. This file
-keeps the generator-side details that were removed from them.
+**Internal. Not for the other team.** The shared docs, [`shared/PROTOCOL_v3.md`](../shared/PROTOCOL_v3.md) and [`protocol_v3_responses.md`](protocol_v3_responses.md), cover only what Unity sends and receives. This file keeps the generator-side details that were removed from them.
 
-The current Python generator (`processor/src/`) is structural placeholder code and will be replaced by a U-Net.
-These notes describe what any generator must do to meet the v3 contract, not how today's code does it.
+The current Python generator (`processor/src/`) is structural placeholder code and will be replaced by a U-Net. These notes describe what any generator must do to meet the v3 contract, not how today's code does it.
 
 ## Using the FRAME
 
 - **Hit points:** `sonarPos + R(q) · range · dir(az, el)`. The point is not sent.
 - **Normals:** decode `n = v / 32767` (FRD). Use them directly; no normal estimation and no padding cells.
-- **Footprint spread:** estimating how far each cell's footprint spreads in range still uses neighbouring
-  cells. At the grid edges, use one-sided differences.
+- **Footprint spread:** estimating how far each cell's footprint spreads in range still uses neighbouring cells. At the grid edges, use one-sided differences.
 - **No-hit cells:** treat any range that is not finite and in (0, maxRange] as no return.
 
 ## Table 1 fields
@@ -28,9 +24,7 @@ These notes describe what any generator must do to meet the v3 contract, not how
 
 ## Fixed constants (not in CONFIG)
 
-- **Centre frequency and bandwidth:** fixed, as instructed at the start of the project. Range resolution
-  `δr = c / (2B)` sets the width of the range blur on each return. For a CW pulse `B ≈ 1/τ` (100 µs → 10 kHz →
-  7.5 cm); an FM chirp with matched filtering has `B ≫ 1/τ`.
+- **Centre frequency and bandwidth:** fixed, as instructed at the start of the project. Range resolution `δr = c / (2B)` sets the width of the range blur on each return. For a CW pulse `B ≈ 1/τ` (100 µs → 10 kHz → 7.5 cm); an FM chirp with matched filtering has `B ≫ 1/τ`.
 - **Intensity window:** `floor_dB` and the time-varied gain (TVG) law.
 
 ## Intensity scale
@@ -43,8 +37,7 @@ value = clamp( (L_tvg − floor_dB) / 60, 0, 1 )       # inverse: L_tvg = floor_
 ```
 
 - The usual imaging-sonar default is `TVG(r) = 20·log10 r + 2α·r`.
-- Today's code (`processing.py`) instead normalises each image to its own peak (`ceiling_db = image_db.max()`),
-  which breaks the contract and must go.
+- Today's code (`processing.py`) instead normalises each image to its own peak (`ceiling_db = image_db.max()`), which breaks the contract and must go.
 - For the U-Net: training targets must be on this fixed scale, or the model learns per-ping rescaling.
 
 ## Cartesian output
@@ -60,9 +53,7 @@ value = clamp( (L_tvg − floor_dB) / 60, 0, 1 )       # inverse: L_tvg = floor_
 2. FRAME parsing: 176-byte header, `176 + 11·W·H` size check, three planes.
 3. New ray formula without padding.
 4. Use Unity's normals instead of estimating them.
-5. Material table re-indexed to the v3 IDs (steel → metal 21, sand → NATSUR 4, water surface → 20, ...).
-   Keep one ID → model-class lookup, generated from the spec's table, so the U-Net's class order never has
-   to match the wire IDs.
+5. Material table re-indexed to the v3 IDs (steel → metal 21, sand → NATSUR 4, water surface → 20, ...). Keep one ID → model-class lookup, generated from the spec's table, so the U-Net's class order never has to match the wire IDs.
 6. IMAGE with the 192-byte header and the echoed FRAME header.
 7. Fixed intensity scale with TVG, replacing per-image normalisation.
 8. Cartesian resampling.
@@ -70,5 +61,4 @@ value = clamp( (L_tvg − floor_dB) / 60, 0, 1 )       # inverse: L_tvg = floor_
 
 ## Unity editor version (our machine)
 
-The installed editor is **6000.6.8f1**, but the project is pinned to **6000.3.10f1**, and must stay there.
-Opening the project in 6.6 upgrades it. Install 6000.3.10f1 alongside 6.6 (`unityhub` → Installs).
+The installed editor is **6000.6.8f1**, but the project is pinned to **6000.3.10f1**, and must stay there. Opening the project in 6.6 upgrades it. Install 6000.3.10f1 alongside 6.6 (`unityhub` → Installs).

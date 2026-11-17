@@ -4,15 +4,12 @@
 
 This document specifies what Unity sends to the sonar image generator and what it receives back.
 
-- **Out of Unity:** for every ping, a FRAME holding the sonar's pose and, for every ray of a polar grid, the
-  **range**, **material ID** and **surface normal** of the first hit.
+- **Out of Unity:** for every ping, a FRAME holding the sonar's pose and, for every ray of a polar grid, the **range**, **material ID** and **surface normal** of the first hit.
 - **Back into Unity:** for every FRAME, an IMAGE holding the sonar image for that ping.
 
-Unity (client) connects to the generator (server) on `localhost:9000`, or the IP address where the generator
-runs. There is one bidirectional TCP connection. Byte order is **little-endian** throughout.
+Unity (client) connects to the generator (server) on `localhost:9000`, or the IP address where the generator runs. There is one bidirectional TCP connection. Byte order is **little-endian** throughout.
 
-Unity first sends a **CONFIG** describing the sonar and waits for a **CONFIG_ACK**. It then sends one
-**FRAME** per ping, and receives one **IMAGE** in reply to each.
+Unity first sends a **CONFIG** describing the sonar and waits for a **CONFIG_ACK**. It then sends one **FRAME** per ping, and receives one **IMAGE** in reply to each.
 
 ---
 
@@ -25,8 +22,7 @@ Every message in both directions:
 ```
 
 - `payloadLength` counts the payload only. It excludes the 8 bytes of magic and length.
-- If the magic number is wrong, the receiver logs the error and closes the connection. There is no
-  resynchronisation; Unity reconnects and starts again with a CONFIG.
+- If the magic number is wrong, the receiver logs the error and closes the connection. There is no resynchronisation; Unity reconnects and starts again with a CONFIG.
 
 Every payload begins with a `uint32 msgType`:
 
@@ -42,28 +38,14 @@ Every payload begins with a `uint32 msgType`:
 ## Session Rules
 
 1. The first message after connecting **must** be a CONFIG.
-2. The generator replies to every CONFIG with exactly one CONFIG_ACK. Unity waits for that ACK before
-   sending any FRAME.
-3. If the ACK status is `0` (OK), the new CONFIG applies to every following FRAME until the next accepted
-   CONFIG. If the status is non-zero, the generator discards that CONFIG and keeps the previously accepted
-   one, if any. Unity logs the status, fixes the values and resends.
-4. When any config field changes, Unity sends the new CONFIG and waits for its ACK **before** the first
-   FRAME that uses the new values.
-5. A FRAME received before any accepted CONFIG is a protocol error. The generator logs it and closes the
-   connection.
-6. Receivers work out the expected payload length from the active CONFIG ([Frame size](#frame-size)) and
-   never allocate memory from the wire value. A FRAME whose `payloadLength` differs from that size is a
-   protocol error: the generator logs it and closes the connection.
-7. The exchange is **lock-step**: after sending a FRAME, Unity waits for its IMAGE before sending the next
-   FRAME. At most one FRAME is ever in flight, and neither side keeps a queue. Messages are processed strictly
-   in order, and because Unity also sends no FRAME between a CONFIG and its ACK, every FRAME belongs to exactly
-   one CONFIG.
-8. An unknown `msgType`, or a `payloadLength` below 4, is a protocol error: log and close the connection.
-   A CONFIG with the wrong length gets ACK status `2`.
-9. A **session** is one TCP connection. `pingID` increases by 1 per FRAME and wraps modulo 2³². It may
-   restart from any value after a reconnect. Every new connection starts with a CONFIG.
-10. Size limits: `gridWidth · gridHeight ≤ 4,194,304` and image `N · M ≤ 4,194,304`. That caps a FRAME at
-    about 46 MB and an IMAGE at about 16 MB. A CONFIG that exceeds either limit gets ACK status `1`.
+2. The generator replies to every CONFIG with exactly one CONFIG_ACK. Unity waits for that ACK before sending any FRAME.
+3. If the ACK status is `0` (OK), the new CONFIG applies to every following FRAME until the next accepted CONFIG. If the status is non-zero, the generator discards that CONFIG and keeps the previously accepted one, if any. Unity logs the status, fixes the values and resends.
+4. When any config field changes, Unity sends the new CONFIG and waits for its ACK **before** the first FRAME that uses the new values.
+5. A FRAME received before any accepted CONFIG is a protocol error. The generator logs it and closes the connection.
+6. Receivers work out the expected payload length from the active CONFIG ([Frame size](#frame-size)) and never allocate memory from the wire value. A FRAME whose `payloadLength` differs from that size is a protocol error: the generator logs it and closes the connection.
+7. The exchange is **lock-step**: after sending a FRAME, Unity waits for its IMAGE before sending the next FRAME. At most one FRAME is ever in flight, and neither side keeps a queue. Messages are processed strictly in order, and because Unity also sends no FRAME between a CONFIG and its ACK, every FRAME belongs to exactly one CONFIG.
+8. An unknown `msgType`, or a `payloadLength` below 4, is a protocol error: log and close the connection. A CONFIG with the wrong length gets ACK status `2`.
+9. A **session** is one TCP connection. `pingID` increases by 1 per FRAME and wraps modulo 2³². It may restart from any value after a reconnect. Every new connection starts with a CONFIG.
 
 ---
 
@@ -90,8 +72,7 @@ Every payload begins with a `uint32 msgType`:
 | 48     | uint16  | imgWidth          | Cartesian only: pixels across (x, starboard). Send 0 for polar |
 | 50     | uint16  | imgHeight         | Cartesian only: pixels along (y, forward). Send 0 for polar |
 
-Centre frequency and pulse bandwidth are **not** in CONFIG. They are fixed, as instructed at the start of the
-project.
+Centre frequency and pulse bandwidth are **not** in CONFIG. They are fixed, as instructed at the start of the project.
 
 ### Valid values
 
@@ -107,7 +88,7 @@ The generator answers ACK status `1` if any of these is violated. All float fiel
 | sourceLevel_dB | any finite value |
 | imgType | 0 or 1 |
 | imgWidth, imgHeight | ≥ 1 when imgType = 1; ignored (send 0) when imgType = 0 |
-| gridWidth · gridHeight, and image N · M | ≤ 4,194,304 |
+| gridWidth · gridHeight, and image N · M | ≤ 2048 × 2048 cells |
 
 ---
 
@@ -132,8 +113,7 @@ Sent once per CONFIG, in the order the CONFIGs arrived.
 
 ## Unity → Generator: FRAME (msgType = 2)
 
-A FRAME is a 176-byte header followed by three per-cell data planes. Pose and normals must be converted from
-Unity's frame first ([Coordinate Frames](#coordinate-frames)), and the rays cast as in [Ray Geometry](#ray-geometry).
+A FRAME is a 176-byte header followed by three per-cell data planes. Pose and normals must be converted from Unity's frame first ([Coordinate Frames](#coordinate-frames)), and the rays cast as in [Ray Geometry](#ray-geometry).
 
 ### Frame Header (176 bytes)
 
@@ -161,8 +141,7 @@ Every float64 sits at an 8-byte-aligned offset.
 | 168    | uint32    | flags     |       | Bit 0: sonar submerged (1 = in water). When 0, the returned image contains noise only. Other bits reserved (0) |
 | 172    | uint32    | reserved  |       | `0` |
 
-All angles and sizes for the grid come from the current CONFIG. The whole header is echoed back, byte for byte,
-in the IMAGE for this ping.
+All angles and sizes for the grid come from the current CONFIG. The whole header is echoed back, byte for byte, in the IMAGE for this ping.
 
 ### Coordinate Frames
 
@@ -171,8 +150,7 @@ in the IMAGE for this ping.
 | World | **NED**: x = north, y = east, z = down; metres from the scene origin | Right-handed |
 | Sonar body | **FRD**: x = forward, y = starboard, z = down | Right-handed, fixed to the sonar housing |
 
-Attitude is the unit quaternion `q = (x, y, z, w)`, with the scalar last (Hamilton convention). It rotates
-body vectors into the world: `p_world = R(q) · p_body + sonarPos`, with `R = Rz(ψ) · Ry(θ) · Rx(φ)` (ZYX):
+Attitude is the unit quaternion `q = (x, y, z, w)`, with the scalar last (Hamilton convention). It rotates body vectors into the world: `p_world = R(q) · p_body + sonarPos`, with `R = Rz(ψ) · Ry(θ) · Rx(φ)` (ZYX):
 
 ```
 R(q) = [ 1−2(y²+z²)   2(xy−wz)    2(xz+wy)  ]
@@ -180,14 +158,11 @@ R(q) = [ 1−2(y²+z²)   2(xy−wz)    2(xz+wy)  ]
        [ 2(xz−wy)    2(yz+wx)    1−2(x²+y²) ]
 ```
 
-Signs: φ > 0 means the starboard side is down, θ > 0 means the nose is up, and ψ > 0 means turning from north
-toward east.
+Signs: φ > 0 means the starboard side is down, θ > 0 means the nose is up, and ψ > 0 means turning from north toward east.
 
 #### Converting from Unity (required on the Unity side)
 
-Unity is left-handed with Y up, so every pose and normal must be converted before it is sent. The scene is
-assumed to be laid out with Unity **+X = east** and **+Z = north**. With `p = transform.position` and
-`qu = transform.rotation` of the sonar:
+Unity is left-handed with Y up, so every pose and normal must be converted before it is sent. The scene is assumed to be laid out with Unity **+X = east** and **+Z = north**. With `p = transform.position` and `qu = transform.rotation` of the sonar:
 
 ```
 sonarPos = ( p.z, p.x, −p.y )                           # NED
@@ -204,24 +179,21 @@ local = ( FRD.y, −FRD.z, FRD.x )
 ```
 
 - Checked numerically against `M · R_unity · Mᵀ` over 10,000 random rotations; the largest error was 0.
-- Sanity checks: `Quaternion.Euler(0, 30, 0)` gives ψ = +30°; `Euler(10, 0, 0)` gives θ = −10° (Unity's +X
-  rotation turns the nose down); `Euler(0, 0, 10)` gives φ = −10°.
+- Sanity checks: `Quaternion.Euler(0, 30, 0)` gives ψ = +30°; `Euler(10, 0, 0)` gives θ = −10° (Unity's +X rotation turns the nose down); `Euler(0, 0, 10)` gives φ = −10°.
 - Do not send Unity's `eulerAngles` as φ, θ, ψ. They use a different order (Z, X, Y) and different signs.
 - Near θ = ±90° φ and ψ can't be separated (gimbal lock); `sonarRot` remains exact.
 - Zero components can come out as `−0.0`. That is valid; receivers treat it as 0.
 
 ### Ray Geometry
 
-Unity casts one ray per grid cell. Cell angles are defined in the **sonar body frame**, so they do not depend
-on the sonar's roll, pitch or yaw. The grid covers exactly the swath and the vertical field of view.
+Unity casts one ray per grid cell. Cell angles are defined in the **sonar body frame**, so they do not depend on the sonar's roll, pitch or yaw. The grid covers exactly the swath and the vertical field of view.
 
 ```
 az(c) = −swathAngleDeg/2  + (c + 0.5)·swathAngleDeg/W     # c = 0…W−1, positive = starboard
 el(r) = −verticalFOVDeg/2 + (r + 0.5)·verticalFOVDeg/H    # r = 0…H−1, positive = up
 ```
 
-`mountTiltDeg` (τ) is the elevation of the sonar head's boresight in the body frame: `0` = ahead,
-`−90` = straight down, `+10` = 10° up. Ray direction in the body frame (FRD):
+`mountTiltDeg` (τ) is the elevation of the sonar head's boresight in the body frame: `0` = ahead, `−90` = straight down, `+10` = 10° up. Ray direction in the body frame (FRD):
 
 ```
 dir(az, el) = Ry(τ) · ( cos el·cos az,  cos el·sin az,  −sin el )
@@ -231,14 +203,9 @@ dir(az, el) = Ry(τ) · ( cos el·cos az,  cos el·sin az,  −sin el )
                −sin τ·cos el·cos az − cos τ·sin el )
 ```
 
-`Ry(τ)` is a rotation about the body's starboard axis, and τ > 0 raises the boresight. With τ = 0 the fan is
-horizontal: a forward-looking sonar. With τ = −90 the fan is a vertical swath across the sonar's track: a
-down-looking multibeam. In Unity, convert `dir` to local space with `local = (FRD.y, −FRD.z, FRD.x)` and cast
-along `transform.rotation * local`.
+`Ry(τ)` is a rotation about the body's starboard axis, and τ > 0 raises the boresight. With τ = 0 the fan is horizontal: a forward-looking sonar. With τ = −90 the fan is a vertical swath across the sonar's track: a down-looking multibeam. In Unity, convert `dir` to local space with `local = (FRD.y, −FRD.z, FRD.x)` and cast along `transform.rotation * local`.
 
-Every ray starts at `sonarPos`, the acoustic centre, and `range` is measured from that point. `sonarDep` and
-`sonarAlt` are measured from the top and bottom of the housing, so for a housing of height h they differ from
-`sonarPos.D` by h/2.
+Every ray starts at `sonarPos`, the acoustic centre, and `range` is measured from that point. `sonarDep` and `sonarAlt` are measured from the top and bottom of the housing, so for a housing of height h they differ from `sonarPos.D` by h/2.
 
 Test vectors (computed numerically):
 
@@ -254,8 +221,7 @@ Test vectors (computed numerically):
 
 ### Data Planes
 
-Three planes follow the header in this order, each stored row-major as `H` rows of `W` cells, with row `r` and
-column `c` as in [Ray Geometry](#ray-geometry). All three are always present.
+Three planes follow the header in this order, each stored row-major as `H` rows of `W` cells, with row `r` and column `c` as in [Ray Geometry](#ray-geometry). All three are always present.
 
 | # | Plane    | Type per cell | Bytes/cell | Content |
 |---|----------|---------------|-----------:|---------|
@@ -273,8 +239,7 @@ n      = ( nLocal.z, nLocal.x, −nLocal.y )                  # FRD
 v      = clamp( round(n · 32767), −32767, 32767 )           # int16 per component; never −32768
 ```
 
-The receiver decodes `n = v / 32767`. The normal points out of the surface, toward the side the ray came from.
-For the water surface seen from below, it points down.
+The receiver decodes `n = v / 32767`. The normal points out of the surface, toward the side the ray came from. For the water surface seen from below, it points down.
 
 ### Frame size
 
@@ -282,12 +247,9 @@ For the water surface seen from below, it points down.
 frameLength = 176 + 11·W·H
 ```
 
-Example, 512 × 128: 176 + 65,536 · 11 = **721,072 bytes**.
-
 ### Material IDs
 
-One byte per hit. Every surface a ray can hit must carry an ID, including the seabed and the water surface,
-and both must have colliders.
+One byte per hit. Every surface a ray can hit must carry an ID, including the seabed and the water surface, and both must have colliders.
 
 | ID      | Material | Source |
 |---------|----------|--------|
@@ -301,11 +263,9 @@ and both must have colliders.
 | 24      | Rubber (tyre) | |
 | 25–255  | Reserved, for example seagrass, kelp, fish school | |
 
-For a mixed seabed (S-57 lists several NATSUR values, main constituent first), Unity sends the main constituent.
-NATSUR codes 10, 12, 13, 15 and 16 are land classes; they are valid but not expected underwater.
+For a mixed seabed (S-57 lists several NATSUR values, main constituent first), Unity sends the main constituent. NATSUR codes 10, 12, 13, 15 and 16 are land classes; they are valid but not expected underwater.
 
-**IDs are append-only.** A new material takes a reserved ID (never 0). An assigned ID is never renumbered or reused,
-even if its material is withdrawn. Adding a material does not change the protocol version.
+**IDs are append-only.** A new material takes a reserved ID (never 0). An assigned ID is never renumbered or reused, even if its material is withdrawn. Adding a material does not change the protocol version.
 
 ---
 
@@ -325,7 +285,7 @@ Sent once per FRAME.
 | 16     | bytes[176]| frameHeader   | The FRAME header of the ping this image answers, byte for byte (includes `pingID`) |
 | 192    | float32[] | intensityData | `N·M` values in 0–1 ([Intensity scale](#intensity-scale)). Index = `j·M + i` (all of column `j`, then the next column) |
 
-Total for polar 256 × 650: 192 + 665,600 = **665,792 bytes**.
+Total: `192 + 4·N·M`.
 
 ### Pixel geometry
 
@@ -346,10 +306,7 @@ x_j = −X + (j + 0.5) · 2X/N                 # starboard
 y_i = (i + 0.5) · maxRange/M                 # forward along the boresight
 ```
 
-Pixel `(j, i)` shows the point at range `√(x_j² + y_i²)` and azimuth `atan2(x_j, y_i)`. It shows slant range
-projected onto the fan plane, not ground range. Pixels are square only when `2X/N = maxRange/M`. Pixels whose
-centre lies outside the fan (`|az| > swathAngleDeg/2` or range > maxRange) are `NaN`; display them as
-transparent. Polar images never contain `NaN`.
+Pixel `(j, i)` shows the point at range `√(x_j² + y_i²)` and azimuth `atan2(x_j, y_i)`. It shows slant range projected onto the fan plane, not ground range. Pixels are square only when `2X/N = maxRange/M`. Pixels whose centre lies outside the fan (`|az| > swathAngleDeg/2` or range > maxRange) are `NaN`; display them as transparent. Polar images never contain `NaN`.
 
 ### Intensity scale
 
@@ -357,8 +314,7 @@ Values are on a **fixed scale**, as on a real sonar display. They are not normal
 
 - Linear in dB over a fixed window: `0` is the bottom of the window and `1` is the top.
 - Range losses are already compensated, so the same seabed appears similarly bright near and far.
-- The window is the same for every ping and every session, so the same echo gives the same value on every
-  ping. Values can be compared across pings and thresholded, and a strong target does not dim the rest of the image.
+- The window is the same for every ping and every session, so the same echo gives the same value on every ping. Values can be compared across pings and thresholded, and a strong target does not dim the rest of the image.
 - The receiver noise floor is part of the image.
 
 Unity can display the values directly with any colour map, without rescaling.
