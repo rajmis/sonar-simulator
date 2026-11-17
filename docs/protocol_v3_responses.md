@@ -34,7 +34,7 @@ were not in the list, so these responses skip them.
 | Q7. Is our Euler ↔ quaternion convention right? | Yes: ZYX, Hamilton, scalar last, body → NED. Unity's pose must be converted to NED / FRD first |
 | Q8–9. Are el, az and the ray direction independent of attitude? | Yes: all three are body-frame quantities |
 | Q10. Elevation 0 = ahead, −90 = down? | Adopted, for both `el` and `mountTiltDeg` |
-| Q11. Object materials? | IDs 64–67: metal, wood, concrete, rubber |
+| Q11. Object materials? | IDs 21–24: metal, wood, concrete, rubber |
 | Q12. Echo the FRAME header in the IMAGE? | Yes, the full 176-byte header |
 | Q13. Polar or Cartesian output? | Both, chosen once per session in CONFIG |
 | Q15b. Use the S-57 NATSUR seabed classes? | Yes: seabed material ID = NATSUR code (IDs 1–18) |
@@ -95,7 +95,7 @@ start of the project, so v3 also removes `frequency_Hz` from CONFIG.
 ## Q5. Multipath and later hits
 
 **Out of scope for v3.** Each FRAME carries the first hit of every ray only. The water surface's own direct
-return is still included: it is a first hit with material ID 33.
+return is still included: it is a first hit with material ID 20.
 
 ## Q6. Table 1 fields in the frame header
 
@@ -170,13 +170,14 @@ v2 tilt to the new convention (boresight only): `τ_v3 = −90 − tilt_v2`.
 
 | ID | Material | Examples |
 |----|----------|----------|
-| 64 | Metal | Shipping container, ship hull, anchor chain |
-| 65 | Wood | Wooden boat |
-| 66 | Concrete | Pillar |
-| 67 | Rubber | Tyre |
+| 21 | Metal | Shipping container, ship hull, anchor chain |
+| 22 | Wood | Wooden boat |
+| 23 | Concrete | Pillar |
+| 24 | Rubber | Tyre |
 
-IDs 68–255 are reserved for further materials. Unity only sends the ID; adding a material needs a new ID and
-nothing else in the protocol.
+ID 0 means no hit. IDs 19 and 25–255 are reserved, for example for seagrass, kelp or fish schools. IDs are append-only: a new
+material takes a reserved ID, and an assigned ID is never renumbered or reused. Unity only sends the ID; adding a material needs a new ID and nothing else in
+the protocol.
 
 ## Q12. Echoing the FRAME header in IMAGE
 
@@ -211,7 +212,7 @@ S-57 Ed. 3.1, Appendix A, Chapter 2, attribute NATSUR (code 113), printed pages 
 1 mud · 2 clay · 3 silt · 4 sand · 5 stone · 6 gravel · 7 pebbles · 8 cobbles · 9 rock · 10 marsh · 11 lava ·
 12 snow · 13 ice · 14 coral · 15 swamp · 16 bog/moor · 17 shells · 18 boulder.
 
-That puts the seabed at IDs 1–18. The water surface moves from 2 (in v2) to **33**, and a sediment-unspecified seabed is **32**.
+That puts the seabed at IDs 1–18. The water surface moves from 2 (in v2) to **20**.
 
 S-57 allows a mixed seabed such as "4,1,17" (sand, mud, shells), listed main constituent first. One byte per
 cell holds only the **main constituent**. S-57 also defines qualifiers, NATQUA (1 fine, 2 medium, 3 coarse,
@@ -236,7 +237,7 @@ in a later version.
 | 9 | Ray geometry | Zero direction straight down; azimuth about the forward axis | Elevation 0 = ahead, −90 = down; `mountTiltDeg` uses the same convention | Q8–Q10 |
 | 10 | FRAME header | 48 bytes | 176 bytes, with the Table 1 fields | Q6 |
 | 11 | FRAME size | `48 + 5·W·H` (327,728 bytes for 512 × 128) | `176 + 11·W·H` (721,072 bytes for 512 × 128) | RaycastHit, Q6 |
-| 12 | Material IDs | 0 default, 1 seabed, 2 water surface, 3–255 objects | 0 default, 1–18 seabed by NATSUR code, 32 seabed unspecified, 33 water surface, 64–67 object materials | Q11, Q15b |
+| 12 | Material IDs | 0 default, 1 seabed, 2 water surface, 3–255 objects | 1–18 seabed by NATSUR code, 20 water surface, 21–24 object materials, 0 no hit; 19 and 25–255 reserved (append-only) | Q11, Q15b |
 | 13 | IMAGE header | 12 bytes; echoes `pingID` | 192 bytes; echoes the full FRAME header and states `imgType` | Q12, Q13 |
 | 14 | IMAGE index order | "Row-major", with beams called the width | Stated explicitly: index = `j·M + i`, one beam at a time (same bytes as before) | Q13 |
 | 15 | CONFIG_ACK status | 0 OK, 1 invalid value, 2 malformed | Adds 3 unsupported version and 4 unsupported option; status 1 checked against a per-field valid-values table | Status 3 makes the version check (Q1) answerable, and status 4 lets the generator decline an output type it doesn't support yet (Q13). v2's status 1 ("non-positive value") would reject valid values such as `mountTiltDeg = −20`, so each field now has its own range |
@@ -314,6 +315,6 @@ checks ran in throwaway projects outside the repository.
    quaternion; fill the Table 1 fields.
 3. **Rays:** cast the grid with the new ray formula and no padding, and send the normals plane alongside range
    and material.
-4. **Materials:** tag colliders with the v3 material IDs (NATSUR seabed, 33 water surface, 64–67 objects).
+4. **Materials:** tag colliders with the v3 material IDs (NATSUR seabed 1–18, 20 water surface, 21–24 objects).
 5. **Lock-step sending:** after sending a FRAME, wait for its IMAGE before sending the next one. No queue.
 6. **IMAGE:** read the 192-byte header and, for Cartesian output, display `NaN` pixels as transparent.

@@ -291,20 +291,21 @@ and both must have colliders.
 
 | ID      | Material | Source |
 |---------|----------|--------|
-| 0       | Default / unassigned | |
+| 0       | No hit (cells with `range = 0`); never assigned to a material | |
 | 1–18    | Seabed, **ID = S-57 NATSUR code**: 1 mud, 2 clay, 3 silt, 4 sand, 5 stone, 6 gravel, 7 pebbles, 8 cobbles, 9 rock, 10 marsh, 11 lava, 12 snow, 13 ice, 14 coral, 15 swamp, 16 bog/moor, 17 shells, 18 boulder | [S-57 Ed. 3.1 App. A Ch. 2, NATSUR (code 113), pp. 2.153–2.154](https://iho.int/uploads/user/pubs/standards/s-57/31ApAch2.pdf) |
-| 19–31   | Reserved (seabed) | |
-| 32      | Seabed, sediment unspecified | |
-| 33      | Water surface, seen from below | |
-| 34–63   | Reserved (environment) | |
-| 64      | Metal (container, hull, anchor chain) | |
-| 65      | Wood (wooden boat) | |
-| 66      | Concrete (pillar) | |
-| 67      | Rubber (tyre) | |
-| 68–255  | Reserved for further object materials | |
+| 19      | Reserved | |
+| 20      | Water surface, seen from below | |
+| 21      | Metal (container, hull, anchor chain) | |
+| 22      | Wood (wooden boat) | |
+| 23      | Concrete (pillar) | |
+| 24      | Rubber (tyre) | |
+| 25–255  | Reserved, for example seagrass, kelp, fish school | |
 
 For a mixed seabed (S-57 lists several NATSUR values, main constituent first), Unity sends the main constituent.
 NATSUR codes 10, 12, 13, 15 and 16 are land classes; they are valid but not expected underwater.
+
+**IDs are append-only.** A new material takes a reserved ID (never 0). An assigned ID is never renumbered or reused,
+even if its material is withdrawn. Adding a material does not change the protocol version.
 
 ---
 
@@ -397,14 +398,12 @@ IMG_CARTESIAN = 1
 
 FLAG_SUBMERGED = 1 << 0
 
-MAT_DEFAULT         = 0
 MAT_SEABED_NATSUR   = 1..18    # ID = S-57 NATSUR code
-MAT_SEABED_UNKNOWN  = 32
-MAT_WATER_SURFACE   = 33
-MAT_METAL           = 64
-MAT_WOOD            = 65
-MAT_CONCRETE        = 66
-MAT_RUBBER          = 67
+MAT_WATER_SURFACE   = 20
+MAT_METAL           = 21
+MAT_WOOD            = 22
+MAT_CONCRETE        = 23
+MAT_RUBBER          = 24
 
 NORMAL_SCALE = 32767           # int16 snorm
 ```

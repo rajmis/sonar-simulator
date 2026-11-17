@@ -20,7 +20,7 @@ These notes describe what any generator must do to meet the v3 contract, not how
 | Field | Use |
 |-------|-----|
 | `flags` bit 0 | **Now.** When 0, return a noise-only image |
-| `waveHgt` | **Now.** Roughness of the water surface's direct return (material 33): a rougher surface scatters more energy back toward the sonar |
+| `waveHgt` | **Now.** Roughness of the water surface's direct return (material 20): a rougher surface scatters more energy back toward the sonar |
 | `waveFrq`, `waveDir` | Later: time-varying surface roughness |
 | `U V W P Q R` | Later: platform motion during a ping. At 30 m the round trip is 40 ms; a 10°/s yaw rate smears returns by 0.4°, about 70% of the 0.59° beam spacing. Doppler at 400 kHz and 2 m/s is about 1.1 kHz |
 | `sonarDep` | Not needed to form the image: the surface return is already in the range plane, and `flags` is authoritative for "in water" |
@@ -60,7 +60,9 @@ value = clamp( (L_tvg − floor_dB) / 60, 0, 1 )       # inverse: L_tvg = floor_
 2. FRAME parsing: 176-byte header, `176 + 11·W·H` size check, three planes.
 3. New ray formula without padding.
 4. Use Unity's normals instead of estimating them.
-5. Material table re-indexed to the v3 IDs (steel → metal 64, sand → NATSUR 4, water surface → 33, ...).
+5. Material table re-indexed to the v3 IDs (steel → metal 21, sand → NATSUR 4, water surface → 20, ...).
+   Keep one ID → model-class lookup, generated from the spec's table, so the U-Net's class order never has
+   to match the wire IDs.
 6. IMAGE with the 192-byte header and the echoed FRAME header.
 7. Fixed intensity scale with TVG, replacing per-image normalisation.
 8. Cartesian resampling.
