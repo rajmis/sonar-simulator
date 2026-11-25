@@ -9,7 +9,7 @@ This document specifies what Unity sends to the sonar image generator and what i
 
 Unity (client) connects to the generator (server) on `localhost:9000`, or the IP address where the generator runs. There is one bidirectional TCP connection. Byte order is **little-endian** throughout.
 
-Unity first sends a **CONFIG** describing the sonar and waits for a **CONFIG_ACK**. It then sends one **FRAME** per ping, and receives one **IMAGE** in reply to each.
+The sonar's settings are not sent over the connection. Unity and the generator each read them from a local config file before the run ([Sonar Configuration](#sonar-configuration)), and they stay fixed for the whole run. After connecting, Unity sends one **FRAME** per ping and receives one **IMAGE** in reply to each. There is no handshake.
 
 ---
 
@@ -22,96 +22,70 @@ Every message in both directions:
 ```
 
 - `payloadLength` counts the payload only. It excludes the 8 bytes of magic and length.
-- If the magic number is wrong, the receiver logs the error and closes the connection. There is no resynchronisation; Unity reconnects and starts again with a CONFIG.
+- If the magic number is wrong, the receiver logs the error and closes the connection. There is no resynchronisation; Unity reconnects and starts sending FRAMEs again.
 
 Every payload begins with a `uint32 msgType`:
 
-| Direction         | msgType | Message    | Sent when                                                     |
-|-------------------|---------|------------|---------------------------------------------------------------|
-| Unity → Generator | 1       | CONFIG     | Right after connecting, and whenever any config field changes |
-| Unity → Generator | 2       | FRAME      | Every ping                                                    |
-| Generator → Unity | 1       | CONFIG_ACK | In reply to every CONFIG                                      |
-| Generator → Unity | 2       | IMAGE      | In reply to every FRAME                                       |
+| Direction         | msgType | Message | Sent when               |
+|-------------------|---------|---------|-------------------------|
+| Unity → Generator | 1       | FRAME   | Every ping              |
+| Generator → Unity | 1       | IMAGE   | In reply to every FRAME |
 
 ---
 
 ## Session Rules
 
-1. The first message after connecting **must** be a CONFIG.
-2. The generator replies to every CONFIG with exactly one CONFIG_ACK. Unity waits for that ACK before sending any FRAME.
-3. If the ACK status is `0` (OK), the new CONFIG applies to every following FRAME until the next accepted CONFIG. If the status is non-zero, the generator discards that CONFIG and keeps the previously accepted one, if any. Unity logs the status, fixes the values and resends.
-4. When any config field changes, Unity sends the new CONFIG and waits for its ACK **before** the first FRAME that uses the new values.
-5. A FRAME received before any accepted CONFIG is a protocol error. The generator logs it and closes the connection.
-6. Receivers work out the expected payload length from the active CONFIG ([Frame size](#frame-size)) and never allocate memory from the wire value. A FRAME whose `payloadLength` differs from that size is a protocol error: the generator logs it and closes the connection.
-7. The exchange is **lock-step**: after sending a FRAME, Unity waits for its IMAGE before sending the next FRAME. At most one FRAME is ever in flight, and neither side keeps a queue. Messages are processed strictly in order, and because Unity also sends no FRAME between a CONFIG and its ACK, every FRAME belongs to exactly one CONFIG.
-8. An unknown `msgType`, or a `payloadLength` below 4, is a protocol error: log and close the connection. A CONFIG with the wrong length gets ACK status `2`.
-9. A **session** is one TCP connection. `pingID` increases by 1 per FRAME and wraps modulo 2³². It may restart from any value after a reconnect. Every new connection starts with a CONFIG.
+1. Before the run, Unity and the generator each load their local config file ([Sonar Configuration](#sonar-configuration)). The values stay fixed for the whole run and are never sent over the connection.
+2. After connecting, Unity sends only FRAMEs and the generator sends only IMAGEs.
+3. The generator works out the expected FRAME payload length from the config ([Frame size](#frame-size)) and never allocates memory from the wire value. A FRAME whose `payloadLength` differs from that size is a protocol error: the generator logs it and closes the connection.
+4. The exchange is **lock-step**: after sending a FRAME, Unity waits for its IMAGE before sending the next FRAME. At most one FRAME is ever in flight, and neither side keeps a queue. Messages are processed strictly in order.
+5. An unknown `msgType`, or a `payloadLength` below 4, is a protocol error: log and close the connection.
+6. A **session** is one TCP connection. `pingID` increases by 1 per FRAME and wraps modulo 2³². It may restart from any value after a reconnect.
 
 ---
 
-## Unity → Generator: CONFIG (msgType = 1)
+## Sonar Configuration
 
-### Payload (52 bytes)
+Unity and the generator each read the sonar configuration from a local config file at startup. It is never sent over the connection and stays fixed for the whole run. To change any value, stop both sides, update the config and restart.
 
-| Offset | Type    | Field             | Description |
-|--------|---------|-------------------|-------------|
-| 0      | uint32  | msgType           | `1` |
-| 4      | uint32  | protocolVersion   | `3` |
-| 8      | uint16  | numberOfBeams     | Beams in the output image (e.g. 256) |
-| 10     | uint16  | numberOfRangeBins | Range bins in the output image (e.g. 650) |
-| 12     | float32 | maxRange          | Metres |
-| 16     | float32 | swathAngleDeg     | Horizontal opening of the fan. Must be ≤ 180 when `imgType = 1` |
-| 20     | float32 | verticalFOVDeg    | Vertical opening of the fan |
-| 24     | float32 | mountTiltDeg      | Boresight elevation in the body frame: 0 = ahead, −90 = down, positive = up ([Ray Geometry](#ray-geometry)) |
-| 28     | float32 | speedOfSound      | m/s |
-| 32     | float32 | sourceLevel_dB    | dB re 1 µPa at 1 m |
-| 36     | float32 | pulseLength_s     | Pulse duration, seconds |
-| 40     | uint16  | gridWidth         | Azimuth samples W, the number of ray columns Unity casts (e.g. 512) |
-| 42     | uint16  | gridHeight        | Elevation samples H, the number of ray rows Unity casts (e.g. 128) |
-| 44     | uint32  | imgType           | `0` = polar, `1` = Cartesian |
-| 48     | uint16  | imgWidth          | Cartesian only: pixels across (x, starboard). Send 0 for polar |
-| 50     | uint16  | imgHeight         | Cartesian only: pixels along (y, forward). Send 0 for polar |
+It is the user's responsibility to make sure both sides load the correct, matching config. The protocol cannot fully check this. Rule 3 of [Session Rules](#session-rules) catches only a different number of grid cells (`gridWidth · gridHeight`); a grid with the same number of cells, such as 512 × 128 against 256 × 256, passes. Every IMAGE carries `imgType`, `N` and `M`, which Unity can compare with its own config if it wants. Any other difference, such as in `maxRange` or `swathAngleDeg`, goes undetected and gives wrong images without any error. Using a copy of the same config file on both sides avoids this.
 
-Centre frequency and pulse bandwidth are **not** in CONFIG. They are fixed, as instructed at the start of the project.
+The table below is **an example** of a sonar configuration, listing the fields this document's formulas use. The full configuration may contain more fields, such as speed of sound, source level or pulse length, depending on what the generator needs.
+
+| Field             | Type    | Description |
+|-------------------|---------|-------------|
+| numberOfBeams     | uint16  | Beams in the polar image (e.g. 256) |
+| numberOfRangeBins | uint16  | Range bins in the polar image (e.g. 650) |
+| maxRange          | float32 | Metres |
+| swathAngleDeg     | float32 | Horizontal opening of the fan |
+| verticalFOVDeg    | float32 | Vertical opening of the fan |
+| mountTiltDeg      | float32 | Boresight elevation in the body frame: 0 = ahead, −90 = down, positive = up ([Ray Geometry](#ray-geometry)) |
+| gridWidth         | uint16  | Azimuth samples W, the number of ray columns Unity casts (e.g. 512) |
+| gridHeight        | uint16  | Elevation samples H, the number of ray rows Unity casts (e.g. 128) |
+| imgType           | uint32  | `0` = polar, `1` = Cartesian |
+| imgWidth          | uint16  | Cartesian only: pixels across (x, starboard). 0 for polar |
+| imgHeight         | uint16  | Cartesian only: pixels along (y, forward). 0 for polar |
+
+Centre frequency and pulse bandwidth are **not** configurable. They are fixed, as instructed at the start of the project.
 
 ### Valid values
 
-The generator answers ACK status `1` if any of these is violated. All float fields must be finite (no NaN or Inf).
+The config must satisfy these constraints, and all float fields must be finite (no NaN or Inf). If the generator's config breaks any of them, or names an `imgType` the generator does not implement yet, the generator accepts each connection and closes it right away, logging the reason.
 
 | Field(s) | Constraint |
 |----------|------------|
 | numberOfBeams, numberOfRangeBins, gridWidth, gridHeight | ≥ 1 |
-| maxRange, swathAngleDeg, verticalFOVDeg, speedOfSound, pulseLength_s | > 0 |
+| maxRange, swathAngleDeg, verticalFOVDeg | > 0 |
 | swathAngleDeg | ≤ 360 (≤ 180 when imgType = 1) |
 | verticalFOVDeg | ≤ 180 |
 | mountTiltDeg | −90 … +90 |
-| sourceLevel_dB | any finite value |
 | imgType | 0 or 1 |
-| imgWidth, imgHeight | ≥ 1 when imgType = 1; ignored (send 0) when imgType = 0 |
+| imgWidth, imgHeight | ≥ 1 when imgType = 1; ignored (set 0) when imgType = 0 |
 | gridWidth · gridHeight, and image N · M | ≤ 2048 × 2048 cells |
 
 ---
 
-## Generator → Unity: CONFIG_ACK (msgType = 1)
-
-Sent once per CONFIG, in the order the CONFIGs arrived.
-
-| Offset | Type   | Field   | Description |
-|--------|--------|---------|-------------|
-| 0      | uint32 | msgType | `1` |
-| 4      | uint32 | status  | Result code (below) |
-
-| status | Meaning |
-|--------|---------|
-| 0      | OK: CONFIG accepted and now active |
-| 1      | Invalid value: a field violates [Valid values](#valid-values) |
-| 2      | Malformed: payload length is not 52 bytes |
-| 3      | Unsupported `protocolVersion` |
-| 4      | Unsupported option: an `imgType` that this generator does not implement yet |
-
----
-
-## Unity → Generator: FRAME (msgType = 2)
+## Unity → Generator: FRAME (msgType = 1)
 
 A FRAME is a 176-byte header followed by three per-cell data planes. Pose and normals must be converted from Unity's frame first ([Coordinate Frames](#coordinate-frames)), and the rays cast as in [Ray Geometry](#ray-geometry).
 
@@ -121,7 +95,7 @@ Every float64 sits at an 8-byte-aligned offset.
 
 | Offset | Type      | Field     | Unit  | Description |
 |--------|-----------|-----------|-------|-------------|
-| 0      | uint32    | msgType   |       | `2` |
+| 0      | uint32    | msgType   |       | `1` |
 | 4      | uint32    | pingID    |       | Ping sequence number |
 | 8      | float64   | timestamp | s     | Unity `Time.timeAsDouble` |
 | 16     | float64   | sonarLat  | deg   | Latitude, WGS-84 decimal degrees |
@@ -141,7 +115,7 @@ Every float64 sits at an 8-byte-aligned offset.
 | 168    | uint32    | flags     |       | Bit 0: sonar submerged (1 = in water). When 0, the returned image contains noise only. Other bits reserved (0) |
 | 172    | uint32    | reserved  |       | `0` |
 
-All angles and sizes for the grid come from the current CONFIG. The whole header is echoed back, byte for byte, in the IMAGE for this ping.
+All angles and sizes for the grid come from the [Sonar Configuration](#sonar-configuration). The whole header is echoed back, byte for byte, in the IMAGE for this ping.
 
 ### Coordinate Frames
 
@@ -265,11 +239,11 @@ One byte per hit. Every surface a ray can hit must carry an ID, including the se
 
 For a mixed seabed (S-57 lists several NATSUR values, main constituent first), Unity sends the main constituent. NATSUR codes 10, 12, 13, 15 and 16 are land classes; they are valid but not expected underwater.
 
-**IDs are append-only.** A new material takes a reserved ID (never 0). An assigned ID is never renumbered or reused, even if its material is withdrawn. Adding a material does not change the protocol version.
+**IDs are append-only.** A new material takes a reserved ID (never 0). An assigned ID is never renumbered or reused, even if its material is withdrawn. The ID table stays the same for the whole run.
 
 ---
 
-## Generator → Unity: IMAGE (msgType = 2)
+## Generator → Unity: IMAGE (msgType = 1)
 
 Sent once per FRAME.
 
@@ -277,8 +251,8 @@ Sent once per FRAME.
 
 | Offset | Type      | Field         | Description |
 |--------|-----------|---------------|-------------|
-| 0      | uint32    | msgType       | `2` |
-| 4      | uint32    | imgType       | `0` = polar, `1` = Cartesian (as in the active CONFIG) |
+| 0      | uint32    | msgType       | `1` |
+| 4      | uint32    | imgType       | `0` = polar, `1` = Cartesian (as in the [Sonar Configuration](#sonar-configuration)) |
 | 8      | uint16    | N             | Columns: `numberOfBeams` (polar) or `imgWidth` (Cartesian) |
 | 10     | uint16    | M             | Rows: `numberOfRangeBins` (polar) or `imgHeight` (Cartesian) |
 | 12     | uint32    | reserved      | `0` (aligns the echoed header to 8 bytes) |
@@ -327,27 +301,14 @@ Unity can display the values directly with any colour map, without rescaling.
 HOST  = "127.0.0.1"           # or the IP address where the generator runs
 PORT  = 9000
 MAGIC = 0x3BA4B839            # wire bytes 39 B8 A4 3B
-PROTOCOL_VERSION = 3
 
-# Unity → Generator
-MSG_CONFIG = 1
-MSG_FRAME  = 2
-# Generator → Unity
-MSG_CONFIG_ACK = 1
-MSG_IMAGE      = 2
+MSG_FRAME = 1                  # Unity → Generator
+MSG_IMAGE = 1                  # Generator → Unity
 
 PREFIX_SIZE       = 8          # magic + payloadLength
-CONFIG_SIZE       = 52
 FRAME_HEADER_SIZE = 176
 FRAME_CELL_SIZE   = 11         # range 4 + material 1 + normal 6
-CONFIG_ACK_SIZE   = 8
 IMAGE_HEADER_SIZE = 192        # 16 + echoed FRAME header
-
-ACK_OK                 = 0
-ACK_INVALID_VALUE      = 1
-ACK_MALFORMED          = 2
-ACK_UNSUPPORTED_VER    = 3
-ACK_UNSUPPORTED_OPTION = 4
 
 IMG_POLAR     = 0
 IMG_CARTESIAN = 1

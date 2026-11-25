@@ -2,6 +2,8 @@
 
 2026-11-11 · answers to the questions raised after the **old version (v2)**, [`shared/PROTOCOL_v2.md`](../shared/PROTOCOL_v2.md), was implemented. The **new version (v3)** is [`shared/PROTOCOL_v3.md`](../shared/PROTOCOL_v3.md) (draft). It covers what Unity sends out (pose, and range, material ID and surface normal for every cell) and the image it receives back.
 
+**Updated 2026-11-25:** the CONFIG message and its CONFIG_ACK are removed. Unity and the generator each read the sonar settings from a local config file before the run, the settings stay fixed for the run, and after connecting Unity sends only FRAMEs.
+
 Three findings change the design and are worth reading first:
 
 1. **The old ray formula cannot describe a forward-looking sonar.** In v2, azimuth rotates about the sonar's forward axis, starting from straight down. Setting `mountTiltDeg = −90` to look ahead collapses the whole fan onto one direction (verified numerically: azimuths −60°, 0° and +60° all gave `(0, 0, 1)`). v3 uses a forward-looking-native formula that also covers the down-looking multibeam case (Q8–Q10).
@@ -17,7 +19,7 @@ The complete RaycastHit was raised as a point rather than a question; it is answ
 | Point raised: send the complete RaycastHit | Send the surface normal (`RaycastHit.normal`) for every cell, alongside the range and material ID already sent. The rest of the struct is redundant or meaningless outside Unity |
 | Q1. Add a magic number prefix? | Yes: `[magic 0x3BA4B839][length][payload]` |
 | Q3. What is the optimal `paddingDeg`? | None: `paddingDeg` is removed, because Unity now sends the normals |
-| Q4. Add pulse bandwidth to CONFIG? | No. Centre frequency and bandwidth stay fixed, as instructed at the start of the project |
+| Q4. Add pulse bandwidth to the sonar settings? | No. Centre frequency and bandwidth stay fixed, as instructed at the start of the project |
 | Q5. Multipath and later hits? | Out of scope for v3. FRAMEs carry the first hit only |
 | Q6. Add the Table 1 fields to the FRAME header? | Yes, all of them, and every IMAGE echoes them back |
 | Q7. Is our Euler ↔ quaternion convention right? | Yes: ZYX, Hamilton, scalar last, body → NED. Unity's pose must be converted to NED / FRD first |
@@ -25,7 +27,7 @@ The complete RaycastHit was raised as a point rather than a question; it is answ
 | Q10. Elevation 0 = ahead, −90 = down? | Adopted, for both `el` and `mountTiltDeg` |
 | Q11. Object materials? | IDs 21–24: metal, wood, concrete, rubber |
 | Q12. Echo the FRAME header in the IMAGE? | Yes, the full 176-byte header |
-| Q13. Polar or Cartesian output? | Both, chosen once per session in CONFIG |
+| Q13. Polar or Cartesian output? | Both, chosen in the local config file and fixed for the run |
 | Q15b. Use the S-57 NATSUR seabed classes? | Yes: seabed material ID = NATSUR code (IDs 1–18) |
 
 ---
@@ -53,7 +55,7 @@ One thing to know for Unity upgrades: in Unity 6.6, `RaycastHit.colliderInstance
 
 ## Q1. Magic number prefix
 
-Yes. v3 frames every message as `[uint32 0x3BA4B839][uint32 payloadLength][payload]`, so on the wire the magic number is the bytes `39 B8 A4 3B`. It goes before the length, so a receiver checks it before trusting the length. On a mismatch the receiver closes the connection rather than trying to resynchronise: on TCP the only realistic causes are the wrong peer or a protocol-version mismatch. For the same reason CONFIG now also carries `protocolVersion = 3`.
+Yes. v3 frames every message as `[uint32 0x3BA4B839][uint32 payloadLength][payload]`, so on the wire the magic number is the bytes `39 B8 A4 3B`. It goes before the length, so a receiver checks it before trusting the length. On a mismatch the receiver closes the connection rather than trying to resynchronise: on TCP the only realistic causes are the wrong peer or an old (v2) peer.
 
 ## Q3. Choosing `paddingDeg`
 
@@ -63,7 +65,7 @@ For reference, with the v2 default of 2° padding (150° × 25° fan, 512 × 128
 
 ## Q4. Pulse bandwidth
 
-Not added. The centre frequency and pulse bandwidth stay **fixed**, as instructed at the start of the project, so v3 also removes `frequency_Hz` from CONFIG.
+Not added. The centre frequency and pulse bandwidth stay **fixed**, as instructed at the start of the project, so v3 also removes `frequency_Hz` from the sonar settings.
 
 ## Q5. Multipath and later hits
 
@@ -136,7 +138,7 @@ Yes. The IMAGE carries the full 176-byte FRAME header byte for byte at offset 16
 
 Yes. The current output is a polar image, one column per beam and one row per range bin. v3 adds a Cartesian image as an alternative.
 
-The choice goes in **CONFIG** (`imgType`, `imgWidth`, `imgHeight`), not the FRAME. Output type rarely changes mid-session, and changing it through CONFIG goes through the existing ACK handshake. The IMAGE repeats `imgType`, `N` and `M` so every image can be read on its own. We kept your proposed layout with one change: a 4-byte reserved field after `N` and `M`, so the echoed header starts on an 8-byte boundary.
+The choice goes in the **local config file** that Unity and the generator each read before the run (`imgType`, `imgWidth`, `imgHeight`), not in the FRAME, and it stays fixed for the run. The IMAGE repeats `imgType`, `N` and `M` so every image can be read on its own. We kept your proposed layout with one change: a 4-byte reserved field after `N` and `M`, so the echoed header starts on an 8-byte boundary.
 
 Cartesian details to note:
 - The Cartesian image lies in the plane of the fan. It shows slant range projected onto that plane, not ground range.
@@ -160,24 +162,23 @@ S-57 allows a mixed seabed such as "4,1,17" (sand, mud, shells), listed main con
 | # | Item | Old version (v2) | New version (v3) | Why |
 |---|------|------------------|------------------|-----|
 | 1 | Message framing | `[length][payload]` | `[magic 0x3BA4B839][length][payload]` | Q1 |
-| 2 | Protocol version | Not sent | CONFIG carries `protocolVersion = 3`; ACK status `3` if unsupported | Q1 |
-| 3 | CONFIG size | 48 bytes | 52 bytes | Follows from rows 2, 4, 6 and 7 |
-| 4 | `paddingDeg` | CONFIG field; the grid extends past the swath and vertical FOV | **Removed.** The grid covers exactly the swath and vertical FOV | Q3 |
-| 5 | Surface normals | Not sent | **Sent by Unity** from `RaycastHit.normal`, in every FRAME (3 × int16, body frame) | RaycastHit |
-| 6 | `frequency_Hz` | CONFIG field | **Removed.** Centre frequency and bandwidth are fixed | Q4 |
-| 7 | Output image | Polar only | Polar or Cartesian, chosen in CONFIG (`imgType`, `imgWidth`, `imgHeight`) | Q13 |
-| 8 | Coordinate frames | Unity world (left-handed, Y up); attitude convention unstated | World NED, body FRD, Hamilton quaternion (scalar last), ZYX Euler; Unity converts before sending | Q7 |
-| 9 | Ray geometry | Zero direction straight down; azimuth about the forward axis | Elevation 0 = ahead, −90 = down; `mountTiltDeg` uses the same convention | Q8–Q10 |
-| 10 | FRAME header | 48 bytes | 176 bytes, with the Table 1 fields | Q6 |
-| 11 | FRAME size | `48 + 5·W·H` | `176 + 11·W·H` | RaycastHit, Q6 |
-| 12 | Material IDs | 0 default, 1 seabed, 2 water surface, 3–255 objects | 1–18 seabed by NATSUR code, 20 water surface, 21–24 object materials, 0 no hit; 19 and 25–255 reserved (append-only) | Q11, Q15b |
-| 13 | IMAGE header | 12 bytes; echoes `pingID` | 192 bytes; echoes the full FRAME header and states `imgType` | Q12, Q13 |
-| 14 | IMAGE index order | "Row-major", with beams called the width | Stated explicitly: index = `j·M + i`, one beam at a time (same bytes as before) | Q13 |
-| 15 | CONFIG_ACK status | 0 OK, 1 invalid value, 2 malformed | Adds 3 unsupported version and 4 unsupported option; status 1 checked against a per-field valid-values table, including a cap on grid and image size | Status 3 makes the version check (Q1) answerable, and status 4 lets the generator decline an output type it doesn't support yet (Q13). v2's status 1 ("non-positive value") would reject valid values such as `mountTiltDeg = −20`, so each field now has its own range |
-| 16 | Session rules | 6 rules ([listed below](#session-rules-old-and-new)) | Keeps all 6, makes rule 6 close the connection, and adds 3: lock-step exchange, closing on other protocol errors, sessions and `pingID` wrap-around ([listed below](#session-rules-old-and-new)) | v2 left open how many FRAMEs may be in flight, when a new CONFIG takes effect, and what happens to a mis-sized FRAME. Lock-step settles the first two: Unity waits for each IMAGE before sending the next FRAME, so nothing queues up on either side and every image matches the latest pose. The tightened rule 6 settles the third |
-| 17 | Intensity scale | "Normalised 0–1", undefined | A **fixed** scale, the same for every ping ([below](#intensity-scale-old-and-new)) | v2 never said what 0–1 is relative to. A fixed scale matches real sonar displays, and makes values comparable across pings and usable for thresholds |
+| 2 | Sonar settings | Sent by Unity in a 48-byte CONFIG, answered by a CONFIG_ACK; can change mid-session | **Not sent.** Unity and the generator each read them from a local config file before the run, and they stay fixed for the run. CONFIG and CONFIG_ACK are removed, and FRAME and IMAGE become `msgType` 1 | Review feedback: the settings never change during a run, so the handshake is not needed. Making sure both sides load the correct, matching file is up to the user |
+| 3 | `paddingDeg` | CONFIG field; the grid extends past the swath and vertical FOV | **Removed.** The grid covers exactly the swath and vertical FOV | Q3 |
+| 4 | Surface normals | Not sent | **Sent by Unity** from `RaycastHit.normal`, in every FRAME (3 × int16, body frame) | RaycastHit |
+| 5 | `frequency_Hz` | CONFIG field | **Removed.** Centre frequency and bandwidth are fixed | Q4 |
+| 6 | Output image | Polar only | Polar or Cartesian, chosen in the local config file (`imgType`, `imgWidth`, `imgHeight`) | Q13 |
+| 7 | Coordinate frames | Unity world (left-handed, Y up); attitude convention unstated | World NED, body FRD, Hamilton quaternion (scalar last), ZYX Euler; Unity converts before sending | Q7 |
+| 8 | Ray geometry | Zero direction straight down; azimuth about the forward axis | Elevation 0 = ahead, −90 = down; `mountTiltDeg` uses the same convention | Q8–Q10 |
+| 9 | FRAME header | 48 bytes | 176 bytes, with the Table 1 fields | Q6 |
+| 10 | FRAME size | `48 + 5·W·H` | `176 + 11·W·H` | RaycastHit, Q6 |
+| 11 | Material IDs | 0 default, 1 seabed, 2 water surface, 3–255 objects | 1–18 seabed by NATSUR code, 20 water surface, 21–24 object materials, 0 no hit; 19 and 25–255 reserved (append-only) | Q11, Q15b |
+| 12 | IMAGE header | 12 bytes; echoes `pingID` | 192 bytes; echoes the full FRAME header and states `imgType` | Q12, Q13 |
+| 13 | IMAGE index order | "Row-major", with beams called the width | Stated explicitly: index = `j·M + i`, one beam at a time (same bytes as before) | Q13 |
+| 14 | Valid config values | CONFIG_ACK status 1 for any non-positive value | A per-field valid-values table, including a cap on grid and image size. If its config breaks them or names an `imgType` it doesn't support yet, the generator accepts each connection and closes it right away, logging the reason | v2's rule would reject valid values such as `mountTiltDeg = −20`, so each field now has its own range |
+| 15 | Session rules | 6 rules ([listed below](#session-rules-old-and-new)) | 6 rules: drops the 5 CONFIG rules, makes the size check close the connection, and adds local config loading, FRAME/IMAGE only, lock-step exchange, closing on other protocol errors, and sessions with `pingID` wrap-around ([listed below](#session-rules-old-and-new)) | v2 left open how many FRAMEs may be in flight and what happens to a mis-sized FRAME. Lock-step settles the first: Unity waits for each IMAGE before sending the next FRAME, so nothing queues up on either side and every image matches the latest pose. The tightened size check settles the second |
+| 16 | Intensity scale | "Normalised 0–1", undefined | A **fixed** scale, the same for every ping ([below](#intensity-scale-old-and-new)) | v2 never said what 0–1 is relative to. A fixed scale matches real sonar displays, and makes values comparable across pings and usable for thresholds |
 
-Unchanged: TCP on port 9000, little-endian byte order, the four message types and their `msgType` values, the CONFIG → CONFIG_ACK → FRAME → IMAGE sequence, the range and material planes, and the submerged flag.
+Unchanged: TCP on port 9000, little-endian byte order, the range and material planes, and the submerged flag.
 
 ### Session rules: old and new
 
@@ -190,15 +191,14 @@ The old version (v2) had six session rules:
 5. A FRAME received before any accepted CONFIG is a protocol error: the generator logs it and closes the connection.
 6. The generator checks each FRAME's payload length against the current CONFIG (`48 + 5·W·H`) and rejects frames that do not match.
 
-The new version (v3) keeps rules 1–5 unchanged and tightens rule 6:
+The new version (v3) has no CONFIG, so rules 1–5 are gone. It has six rules:
 
-6. Receivers work out the expected length from the active CONFIG (now `176 + 11·W·H`) and never allocate memory from the wire value. A mis-sized FRAME is a protocol error: the generator logs it and **closes the connection**. (v2 said only "rejects", which left open whether the connection survives.)
-
-It adds three rules:
-
-7. **Lock-step.** After sending a FRAME, Unity waits for its IMAGE before sending the next FRAME. At most one FRAME is ever in flight, and neither side keeps a queue. Messages are processed strictly in order, so every FRAME belongs to exactly one CONFIG.
-8. **Other protocol errors.** An unknown `msgType`, or a `payloadLength` below 4, closes the connection. A CONFIG with the wrong length gets ACK status `2`.
-9. **Sessions.** A session is one TCP connection. `pingID` increases by 1 per FRAME, wraps modulo 2³², and may restart from any value after a reconnect.
+1. **Local config.** Before the run, Unity and the generator each load their local config file. The values stay fixed for the whole run and are never sent over the connection.
+2. **FRAMEs and IMAGEs only.** After connecting, Unity sends only FRAMEs and the generator sends only IMAGEs.
+3. **Size check** (old rule 6, tightened). The generator works out the expected FRAME length from the config (now `176 + 11·W·H`) and never allocates memory from the wire value. A mis-sized FRAME is a protocol error: the generator logs it and **closes the connection**. (v2 said only "rejects", which left open whether the connection survives.)
+4. **Lock-step.** After sending a FRAME, Unity waits for its IMAGE before sending the next FRAME. At most one FRAME is ever in flight, and neither side keeps a queue. Messages are processed strictly in order.
+5. **Other protocol errors.** An unknown `msgType`, or a `payloadLength` below 4, closes the connection.
+6. **Sessions.** A session is one TCP connection. `pingID` increases by 1 per FRAME, wraps modulo 2³², and may restart from any value after a reconnect.
 
 ### Intensity scale: old and new
 
@@ -221,9 +221,10 @@ Code was written only where feasibility was uncertain. Everything else in v3 is 
 
 ## What changes on the Unity side
 
-1. **Framing:** magic number and `protocolVersion`, the 52-byte CONFIG, and handling ACK statuses 0–4.
-2. **Pose:** convert position, rotation and normals from Unity to NED / FRD; derive φ, θ, ψ from the converted quaternion; fill the Table 1 fields.
-3. **Rays:** cast the grid with the new ray formula and no padding, and send the normals plane alongside range and material.
-4. **Materials:** tag colliders with the v3 material IDs (NATSUR seabed 1–18, 20 water surface, 21–24 objects).
-5. **Lock-step sending:** after sending a FRAME, wait for its IMAGE before sending the next one. No queue.
-6. **IMAGE:** read the 192-byte header and, for Cartesian output, display `NaN` pixels as transparent.
+1. **Framing:** the magic number. CONFIG and CONFIG_ACK are no longer sent; FRAMEs start straight after connecting. FRAME and IMAGE are now `msgType` 1 (was 2).
+2. **Config:** read the sonar settings from a local config file before the run, matching the generator's.
+3. **Pose:** convert position, rotation and normals from Unity to NED / FRD; derive φ, θ, ψ from the converted quaternion; fill the Table 1 fields.
+4. **Rays:** cast the grid with the new ray formula and no padding, and send the normals plane alongside range and material.
+5. **Materials:** tag colliders with the v3 material IDs (NATSUR seabed 1–18, 20 water surface, 21–24 objects).
+6. **Lock-step sending:** after sending a FRAME, wait for its IMAGE before sending the next one. No queue.
+7. **IMAGE:** read the 192-byte header and, for Cartesian output, display `NaN` pixels as transparent.

@@ -22,7 +22,7 @@ The current Python generator (`processor/src/`) is structural placeholder code a
 | `sonarDep` | Not needed to form the image: the surface return is already in the range plane, and `flags` is authoritative for "in water" |
 | `φ θ ψ`, `sonarLat`, `sonarLon`, `sonarAlt`, `uwNorth`, `uwEast` | Not used; echoed back |
 
-## Fixed constants (not in CONFIG)
+## Fixed constants (not in the config file)
 
 - **Centre frequency and bandwidth:** fixed, as instructed at the start of the project. Range resolution `δr = c / (2B)` sets the width of the range blur on each return. For a CW pulse `B ≈ 1/τ` (100 µs → 10 kHz → 7.5 cm); an FM chirp with matched filtering has `B ≫ 1/τ`.
 - **Intensity window:** `floor_dB` and the time-varied gain (TVG) law.
@@ -45,11 +45,11 @@ value = clamp( (L_tvg − floor_dB) / 60, 0, 1 )       # inverse: L_tvg = floor_
 - Resample from the polar image with bilinear interpolation at `r = √(x² + y²)`, `az = atan2(x, y)`.
 - Pixels whose centre is outside the fan (`|az| > swath/2` or `r > maxRange`) are `NaN`.
 - Between the outermost beam or bin centre and the fan edge, clamp to the outermost beam or bin.
-- Until Cartesian is implemented, answer `imgType = 1` with ACK status `4`.
+- Until Cartesian is implemented, when the config file has `imgType = 1`, accept each connection and close it right away, logging the reason.
 
 ## Implementing v3 in the generator
 
-1. Framing (magic, version), 52-byte CONFIG parsing and validation, ACK codes 0–4.
+1. Read all settings, including generator-only ones (speed of sound, source level, pulse length), from one config file at startup and check them against the spec's valid values. If any is invalid, accept each connection and close it right away, logging the reason. Framing: magic number only; there is no CONFIG or ACK. FRAME and IMAGE are now `msgType` 1 (was 2).
 2. FRAME parsing: 176-byte header, `176 + 11·W·H` size check, three planes.
 3. New ray formula without padding.
 4. Use Unity's normals instead of estimating them.
